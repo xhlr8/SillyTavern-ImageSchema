@@ -8,17 +8,32 @@ import {
     parseMessage,
     projectSchemas,
 } from './parser.js';
+import {
+    PROVIDER_ROUTE_PATHS,
+    normalizeGenericMethod,
+    normalizeProviderConfig,
+    normalizeProviderProfile,
+    parseAllowedModels,
+    parseProviderDefaults,
+    redactSensitiveValue,
+    serializeProviderDefaults,
+} from './provider.js';
 
 const MODULE_NAME = 'imageSchema';
 const PROMPT_KEY = 'image-schema-instruction';
 const PLUGIN_BASE = '/api/plugins/image-schema';
-const ROUTES = Object.freeze({
+export const ROUTES = Object.freeze({
     status: `${PLUGIN_BASE}/status`,
-    profiles: `${PLUGIN_BASE}/profiles`,
     test: `${PLUGIN_BASE}/test`,
     image: `${PLUGIN_BASE}/image/`,
     cacheStats: `${PLUGIN_BASE}/cache/stats`,
     cacheClear: `${PLUGIN_BASE}/cache/clear`,
+    providerConfig: `${PLUGIN_BASE}${PROVIDER_ROUTE_PATHS.config}`,
+    providerProfileSave: `${PLUGIN_BASE}${PROVIDER_ROUTE_PATHS.profileSave}`,
+    providerProfileDelete: `${PLUGIN_BASE}${PROVIDER_ROUTE_PATHS.profileDelete}`,
+    providerDefault: `${PLUGIN_BASE}${PROVIDER_ROUTE_PATHS.defaultProfile}`,
+    providerSecret: `${PLUGIN_BASE}${PROVIDER_ROUTE_PATHS.secret}`,
+    providerProfileTest: `${PLUGIN_BASE}${PROVIDER_ROUTE_PATHS.profileTest}`,
 });
 
 let initialized = false;
@@ -27,6 +42,8 @@ let settings;
 let observer;
 let renderQueued = false;
 let promptIsArmed = false;
+let providerConfig = { profiles: [], defaultProfile: '' };
+let providerOriginalName = '';
 const boundEvents = [];
 
 function listen(event, handler) {
@@ -185,10 +202,21 @@ function addImageControls(image, request, messageId, occurrence) {
     if (frame.querySelector('.image-schema-actions')) return;
     const actions = document.createElement('span');
     actions.className = 'image-schema-actions';
-    actions.innerHTML = `
-        <button type="button" class="menu_button image-schema-copy" title="Copy image prompt"><i class="fa-solid fa-copy"></i></button>
-        <button type="button" class="menu_button image-schema-inspect" title="Inspect effective request"><i class="fa-solid fa-circle-info"></i></button>
-        <button type="button" class="menu_button image-schema-regenerate" title="Regenerate with a fresh seed"><i class="fa-solid fa-dice"></i></button>`;
+    const controls = [
+        ['image-schema-copy', 'Copy image prompt', 'fa-copy'],
+        ['image-schema-inspect', 'Inspect effective request', 'fa-circle-info'],
+        ['image-schema-regenerate', 'Regenerate with a fresh seed', 'fa-dice'],
+    ];
+    for (const [className, title, iconName] of controls) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = `menu_button ${className}`;
+        button.title = title;
+        const icon = document.createElement('i');
+        icon.className = `fa-solid ${iconName}`;
+        button.append(icon);
+        actions.append(button);
+    }
     frame.append(actions);
 
     actions.querySelector('.image-schema-copy').addEventListener('click', async () => {
@@ -345,6 +373,210 @@ function setChecked(id, input) {
     if (element instanceof HTMLInputElement) element.checked = Boolean(input);
 }
 
+function setProviderResult(value) {
+    const output = document.getElementById('image_schema_provider_result');
+    if (!output) return;
+    output.textContent = typeof value === 'string' ? value : JSON.stringify(redactSensitiveValue(value), null, 2);
+}
+
+function providerPayload() {
+    const name = value('image_schema_provider_name').trim();
+    if (!name) throw new Error('Provider profile name is required');
+    const timeoutMs = Number(value('image_schema_provider_timeout'));
+    if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1) throw new Error('Provider timeout must be a positive integer');
+    const type = value('image_schema_provider_type');
+    const profile = {
+        name,
+        type,
+        url: value('image_schema_provider_url').trim(),
+        model: value('image_schema_provider_model').trim(),
+        allowedModels: parseAllowedModels(value('image_schema_provider_allowed_models')),
+        timeoutMs,
+        defaults: parseProviderDefaults(value('image_schema_provider_defaults')),
+    };
+    if (type === 'generic') profile.method = normalizeGenericMethod(value('image_schema_provider_method'));
+    return profile;
+}
+
+function updateProviderPanels() {
+    const type = value('image_schema_provider_type');
+    document.querySelectorAll('[data-image-schema-provider-panel]').forEach(panel => {
+        panel.classList.toggle('displayNone', panel.getAttribute('data-image-schema-provider-panel') !== type);
+    });
+}
+
+function updateProviderSecretStatus(configured) {
+    const status = document.getElementById('image_schema_provider_key_status');
+    if (!status) return;
+    status.dataset.state = configured ? 'ok' : 'checking';
+    status.textContent = configured ? 'API key configured' : 'No API key configured';
+}
+
+function populateProviderEditor(profileInput) {
+    const profile = normalizeProviderProfile(profileInput);
+    providerOriginalName = profile.name;
+    setValue('image_schema_provider_name', profile.name);
+    setValue('image_schema_provider_type', profile.type);
+    setValue('image_schema_provider_url', profile.url);
+    setValue('image_schema_provider_method', profile.method || 'POST');
+    setValue('image_schema_provider_model', profile.model);
+    setValue('image_schema_provider_allowed_models', profile.allowedModels.join('\n'));
+    setValue('image_schema_provider_timeout', profile.timeoutMs);
+    setValue('image_schema_provider_defaults', serializeProviderDefaults(profile.defaults));
+    setValue('image_schema_provider_key', '');
+    setChecked('image_schema_provider_make_default', profile.name !== '' && profile.name === providerConfig.defaultProfile);
+    updateProviderSecretStatus(profile.apiKeyConfigured);
+    updateProviderPanels();
+}
+
+function renderProviderSelector(selectedName = '') {
+    const selector = document.getElementById('image_schema_provider_profile');
+    if (!(selector instanceof HTMLSelectElement)) return;
+    selector.replaceChildren();
+    if (!providerConfig.profiles.length) {
+        const empty = document.createElement('option');
+        empty.value = '';
+        empty.textContent = 'No profiles configured';
+        selector.append(empty);
+        populateProviderEditor({});
+        return;
+    }
+    for (const profile of providerConfig.profiles) {
+        const option = document.createElement('option');
+        option.value = profile.name;
+        option.textContent = profile.name === providerConfig.defaultProfile ? `${profile.name} (default)` : profile.name;
+        selector.append(option);
+    }
+    const selected = providerConfig.profiles.find(profile => profile.name === selectedName)
+        || providerConfig.profiles.find(profile => profile.name === providerConfig.defaultProfile)
+        || providerConfig.profiles[0];
+    selector.value = selected.name;
+    populateProviderEditor(selected);
+}
+
+async function refreshProviders(selectedName = '') {
+    setProviderResult('Loading provider profiles…');
+    try {
+        providerConfig = normalizeProviderConfig(await pluginFetch(ROUTES.providerConfig));
+        renderProviderSelector(selectedName);
+        setProviderResult(`${providerConfig.profiles.length} provider profile(s) loaded.`);
+        return providerConfig;
+    } catch (error) {
+        setProviderResult(`Provider profiles unavailable: ${error.message}`);
+        throw error;
+    }
+}
+
+function selectProvider() {
+    const selected = providerConfig.profiles.find(profile => profile.name === value('image_schema_provider_profile'));
+    if (selected) populateProviderEditor(selected);
+}
+
+function addProvider() {
+    populateProviderEditor({ name: '', type: 'openai', timeoutMs: 120000, defaults: {} });
+    setProviderResult('Enter a unique profile name and provider settings.');
+}
+
+function duplicateProvider() {
+    const selected = providerConfig.profiles.find(profile => profile.name === value('image_schema_provider_profile'));
+    if (!selected) return addProvider();
+    populateProviderEditor({ ...structuredClone(selected), name: `${selected.name}-copy`, apiKeyConfigured: false });
+    setProviderResult('Profile fields duplicated. Secrets are not copied.');
+}
+
+async function saveProvider() {
+    try {
+        const profile = providerPayload();
+        const result = await pluginFetch(ROUTES.providerProfileSave, {
+            method: 'POST',
+            body: JSON.stringify({ profile, previousName: providerOriginalName || undefined }),
+        });
+        if (checked('image_schema_provider_make_default')) {
+            await pluginFetch(ROUTES.providerDefault, { method: 'POST', body: JSON.stringify({ name: profile.name }) });
+        }
+        setProviderResult(result);
+        notify('success', `Provider profile “${profile.name}” saved.`);
+        await refreshProviders(profile.name);
+    } catch (error) {
+        setProviderResult(error.message);
+        notify('error', error.message);
+    }
+}
+
+async function deleteProvider() {
+    const name = providerOriginalName || value('image_schema_provider_name').trim();
+    if (!name || !window.confirm(`Delete provider profile “${name}”?`)) return;
+    try {
+        const result = await pluginFetch(ROUTES.providerProfileDelete, { method: 'POST', body: JSON.stringify({ name }) });
+        setProviderResult(result);
+        notify('success', `Provider profile “${name}” deleted.`);
+        await refreshProviders();
+    } catch (error) {
+        setProviderResult(error.message);
+        notify('error', error.message);
+    }
+}
+
+async function setDefaultProvider() {
+    const name = providerOriginalName || value('image_schema_provider_name').trim();
+    if (!name) return notify('error', 'Save or select a provider profile first.');
+    try {
+        const result = await pluginFetch(ROUTES.providerDefault, { method: 'POST', body: JSON.stringify({ name }) });
+        setProviderResult(result);
+        notify('success', `Default provider set to “${name}”.`);
+        await refreshProviders(name);
+    } catch (error) {
+        setProviderResult(error.message);
+        notify('error', error.message);
+    }
+}
+
+async function replaceProviderSecret() {
+    const name = providerOriginalName || value('image_schema_provider_name').trim();
+    const apiKey = value('image_schema_provider_key');
+    if (!name) return notify('error', 'Save or select a provider profile first.');
+    if (!apiKey) return notify('error', 'Enter a replacement API key.');
+    try {
+        const result = await pluginFetch(ROUTES.providerSecret, { method: 'POST', body: JSON.stringify({ name, apiKey }) });
+        setValue('image_schema_provider_key', '');
+        updateProviderSecretStatus(true);
+        setProviderResult(result);
+        notify('success', `API key for “${name}” replaced.`);
+    } catch (error) {
+        setValue('image_schema_provider_key', '');
+        setProviderResult(error.message);
+        notify('error', error.message);
+    }
+}
+
+async function clearProviderSecret() {
+    const name = providerOriginalName || value('image_schema_provider_name').trim();
+    if (!name || !window.confirm(`Clear the API key for “${name}”?`)) return;
+    try {
+        const result = await pluginFetch(ROUTES.providerSecret, { method: 'POST', body: JSON.stringify({ name, clear: true }) });
+        setValue('image_schema_provider_key', '');
+        updateProviderSecretStatus(false);
+        setProviderResult(result);
+        notify('success', `API key for “${name}” cleared.`);
+    } catch (error) {
+        setProviderResult(error.message);
+        notify('error', error.message);
+    }
+}
+
+async function testProvider() {
+    try {
+        const profile = providerPayload();
+        setProviderResult('Testing provider profile…');
+        const result = await pluginFetch(ROUTES.providerProfileTest, { method: 'POST', body: JSON.stringify({ profile }) });
+        setProviderResult(result);
+        notify('success', `Provider profile “${profile.name}” test completed.`);
+    } catch (error) {
+        setProviderResult(error.message);
+        notify('error', error.message);
+    }
+}
+
 function refreshInstructionPreview() {
     const output = document.getElementById('image_schema_instruction_preview');
     if (output) output.textContent = buildInstruction(settings);
@@ -474,15 +706,17 @@ async function addSettingsUi() {
     if (document.getElementById('image_schema_settings')) return;
     const response = await fetch(new URL('./settings.html', import.meta.url));
     if (!response.ok) throw new Error(`Could not load Image Schema settings: ${response.status}`);
-    const container = document.createElement('div');
-    container.innerHTML = await response.text();
-    const root = container.firstElementChild;
+    const template = document.createElement('template');
+    const documentFragment = document.createRange().createContextualFragment(await response.text());
+    template.content.append(documentFragment);
+    const root = template.content.firstElementChild;
     const target = document.getElementById('extensions_settings2') || document.getElementById('extensions_settings');
     if (!root || !target) throw new Error('SillyTavern extension settings container was not found');
     target.append(root);
     populateSettingsForm();
 
     root.querySelectorAll('input, select, textarea').forEach(element => {
+        if (element.closest('#image_schema_provider_editor') || element.id === 'image_schema_provider_profile') return;
         if (element.id === 'image_schema_test_input' || element.id === 'image_schema_test_prompt') return;
         element.addEventListener(element instanceof HTMLSelectElement ? 'change' : 'input', readSettingsForm);
     });
@@ -492,6 +726,17 @@ async function addSettingsUi() {
     document.getElementById('image_schema_test_generation')?.addEventListener('click', testGeneration);
     document.getElementById('image_schema_refresh_cache')?.addEventListener('click', refreshCacheStats);
     document.getElementById('image_schema_clear_cache')?.addEventListener('click', clearCache);
+    document.getElementById('image_schema_provider_profile')?.addEventListener('change', selectProvider);
+    document.getElementById('image_schema_provider_refresh')?.addEventListener('click', () => refreshProviders(providerOriginalName).catch(error => notify('error', error.message)));
+    document.getElementById('image_schema_provider_add')?.addEventListener('click', addProvider);
+    document.getElementById('image_schema_provider_duplicate')?.addEventListener('click', duplicateProvider);
+    document.getElementById('image_schema_provider_delete')?.addEventListener('click', deleteProvider);
+    document.getElementById('image_schema_provider_type')?.addEventListener('change', updateProviderPanels);
+    document.getElementById('image_schema_provider_save')?.addEventListener('click', saveProvider);
+    document.getElementById('image_schema_provider_set_default')?.addEventListener('click', setDefaultProvider);
+    document.getElementById('image_schema_provider_key_replace')?.addEventListener('click', replaceProviderSecret);
+    document.getElementById('image_schema_provider_key_clear')?.addEventListener('click', clearProviderSecret);
+    document.getElementById('image_schema_provider_test')?.addEventListener('click', testProvider);
 }
 
 export async function init() {
@@ -511,6 +756,7 @@ export async function init() {
     }
     queueRenderAll();
     checkPluginStatus().catch(() => {});
+    refreshProviders().catch(() => {});
     refreshCacheStats();
 }
 

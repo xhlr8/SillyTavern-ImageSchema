@@ -19,6 +19,7 @@ image-schema/
   manifest.json
   index.js
   parser.js
+  provider.js
   settings.html
   style.css
 ```
@@ -90,6 +91,12 @@ All three modes support multiple complete occurrences. By default, matching text
 - **Ignore schemas inside Markdown code spans/fences**: enabled by default.
 - **Unknown model parameter policy**: either display a parse error or ignore unknown parameters.
 
+### Provider profiles
+
+Provider profiles are managed by the companion same-origin plugin. The UI can add, duplicate, delete, save, select, set a default, and test OpenAI, Gemini SSE, and generic HTTP profiles. It edits endpoint URL, generic method, model and allowlist, timeout, and provider defaults. The ComfyUI area is layout preparation only; no adapter is implemented.
+
+API key values are write-only: the plugin config response should expose only an `apiKeyConfigured` boolean. Replacement and clearing use the secret route directly. Keys are never copied during duplication and are never placed in `extensionSettings`.
+
 ### Defaults and allowed overrides
 
 A default is trusted user configuration applied to every parsed request when present. **Allow** controls whether the model may replace/provide that parameter in inline or JSON mode. A model value that is recognized but not allowed becomes a visible parse error.
@@ -154,9 +161,23 @@ POST /api/plugins/image-schema/test
 GET  /api/plugins/image-schema/image/:prompt
 POST /api/plugins/image-schema/cache/stats
 POST /api/plugins/image-schema/cache/clear
+GET  /api/plugins/image-schema/providers/config
+POST /api/plugins/image-schema/providers/profile/save
+POST /api/plugins/image-schema/providers/profile/delete
+POST /api/plugins/image-schema/providers/default
+POST /api/plugins/image-schema/providers/secret
+POST /api/plugins/image-schema/providers/profile/test
 ```
 
 Requests use same-origin credentials and SillyTavern's request headers. Image URLs forward all recognized normalized parameters with the plugin's camel-case contract where needed.
+
+Provider route payload contract used by the extension:
+
+- Config response: `{ profiles: Profile[] | Record<string, Profile>, defaultProfile }`; each profile may report `apiKeyConfigured` but must not return the key.
+- Save: `{ profile, previousName? }`, where `profile` contains `name`, `type`, `url`, `model`, `allowedModels`, `timeoutMs`, `defaults`, and `method` for generic HTTP. Profile types are `openai`, `gemini-sse`, and `generic`.
+- Delete/default: `{ name }`.
+- Secret replace: `{ name, apiKey }`; secret clear: `{ name, clear: true }`.
+- Test: `{ profile }`, using the currently edited non-secret fields and the server-stored secret for that profile.
 
 ## Tests
 
