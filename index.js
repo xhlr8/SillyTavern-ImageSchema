@@ -541,3 +541,13 @@ export async function clean() {
     }
     initialized = false;
 }
+
+// SillyTavern 1.15 loads extension modules but does not invoke manifest lifecycle hooks.
+// Initialize on module load; the guard keeps this compatible with hook-aware versions.
+if (typeof document !== 'undefined') {
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => init().catch(error => console.error('[Image Schema] initialization failed', error)), { once: true });
+    } else {
+        init().catch(error => console.error('[Image Schema] initialization failed', error));
+    }
+}
