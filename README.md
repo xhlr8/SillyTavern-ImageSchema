@@ -136,12 +136,14 @@ There is deliberately no `id` parameter. Use seed as the only image identity/ran
 
 A custom instruction is not validated against the parser settings. If it teaches a different wrapper, path, properties, or parameter policy, generated schemas may remain plain text or show errors.
 
-### Parser, generation, and cache tools
+### Diagnostics, generation, and cache tools
 
 - **Parse sample** runs the browser parser only. It does not call the plugin.
 - **Test generation** calls `POST /api/plugins/image-schema/test`, bypasses cache reads, and returns metadata rather than image bytes. A successful result is still written to cache by the current server implementation.
 - **Refresh cache stats** shows server-reported disk statistics and in-flight count.
 - **Clear all cache** clears the authenticated user's configured plugin cache by default.
+- **Plugin activity** shows the bounded sanitized server activity log and summary. It never includes prompts, negative prompts, URLs, headers, request bodies, API keys, or raw upstream errors.
+- **Clear activity** requests removal of the current user's diagnostic events; the plugin requires explicit administrator status for deletion.
 
 ## Image controls
 

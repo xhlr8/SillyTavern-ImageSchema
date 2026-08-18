@@ -36,6 +36,8 @@ export const ROUTES = Object.freeze({
     providerDefault: `${PLUGIN_BASE}${PROVIDER_ROUTE_PATHS.defaultProfile}`,
     providerSecret: `${PLUGIN_BASE}${PROVIDER_ROUTE_PATHS.secret}`,
     providerProfileTest: `${PLUGIN_BASE}${PROVIDER_ROUTE_PATHS.profileTest}`,
+    diagnosticsRecent: `${PLUGIN_BASE}/diagnostics/recent`,
+    diagnosticsClear: `${PLUGIN_BASE}/diagnostics/clear`,
 });
 
 let initialized = false;
@@ -96,44 +98,29 @@ function pluginRequestBody(request) {
     return { request };
 }
 
-function getProjectionSource(message) {
-    return String(message.extra?.image_schema_original ?? message.mes ?? '');
+function clearLegacyProjectionMetadata(message) {
+    if (!message?.extra) return;
+    const ownsDisplay = message.extra.image_schema_display_text !== undefined
+        && message.extra.display_text === message.extra.image_schema_display_text;
+    if (ownsDisplay) {
+        if (message.extra.image_schema_previous_display_text === undefined) delete message.extra.display_text;
+        else message.extra.display_text = message.extra.image_schema_previous_display_text;
+    }
+    delete message.extra.image_schema_original;
+    delete message.extra.image_schema_display_text;
+    delete message.extra.image_schema_previous_display_text;
 }
 
 function prepareMessageProjection(messageId) {
     const message = context.chat?.[Number(messageId)];
-    if (!message || message.is_user || message.is_system) return [];
-    message.extra ??= {};
-    const ownsDisplay = message.extra.image_schema_display_text !== undefined && message.extra.display_text === message.extra.image_schema_display_text;
-    if (!settings.enabled) {
-        if (ownsDisplay) {
-            if (message.extra.image_schema_previous_display_text === undefined) delete message.extra.display_text;
-            else message.extra.display_text = message.extra.image_schema_previous_display_text;
-        }
-        delete message.extra.image_schema_original;
-        delete message.extra.image_schema_display_text;
-        delete message.extra.image_schema_previous_display_text;
-        return [];
-    }
-    const source = getProjectionSource(message);
-    const projection = projectSchemas(source, settings, { urlForRequest: pluginImageUrl });
-    if (projection.occurrences.length) {
-        if (message.extra.image_schema_original === undefined) {
-            message.extra.image_schema_previous_display_text = message.extra.display_text;
-        }
-        message.extra.image_schema_original = source;
-        message.extra.image_schema_display_text = projection.text;
-        message.extra.display_text = projection.text;
-    } else if (message.extra.image_schema_original !== undefined) {
-        if (ownsDisplay) {
-            if (message.extra.image_schema_previous_display_text === undefined) delete message.extra.display_text;
-            else message.extra.display_text = message.extra.image_schema_previous_display_text;
-        }
-        delete message.extra.image_schema_original;
-        delete message.extra.image_schema_display_text;
-        delete message.extra.image_schema_previous_display_text;
-    }
-    return projection.occurrences;
+    if (!message || message.is_user || message.is_system) return { text: String(message?.mes ?? ''), occurrences: [] };
+    // Older builds persisted derived projection data into per-swipe `extra`.
+    // Remove it once, then keep all projection state ephemeral and derived only
+    // from the currently active swipe's canonical `message.mes` string.
+    clearLegacyProjectionMetadata(message);
+    const source = String(message.mes ?? '');
+    if (!settings.enabled) return { text: source, occurrences: [] };
+    return projectSchemas(source, settings, { urlForRequest: pluginImageUrl });
 }
 
 async function pluginFetch(route, options = {}) {
@@ -276,18 +263,27 @@ function renderMessage(messageId) {
     const textElement = messageElement?.querySelector('.mes_text');
     if (!textElement) return;
 
-    const occurrences = prepareMessageProjection(id);
-    const displayText = message.extra?.display_text ?? message.mes ?? '';
-    textElement.innerHTML = context.messageFormatting(
-        displayText,
-        message.name,
-        Boolean(message.is_system),
-        Boolean(message.is_user),
-        id,
-        {},
-        false,
-    );
-    if (settings.enabled) rewriteImages(textElement, occurrences, id);
+    const projection = prepareMessageProjection(id);
+    if (!settings.enabled) return;
+
+    // Preserve ST's core message node and swipe controls. Only replace the
+    // contents when this active swipe actually has a schema and the matching
+    // ephemeral projection is not already present.
+    const expectedKeys = projection.occurrences.filter(item => item.request).map(item => item.key).filter(Boolean);
+    const renderedKeys = new Set(Array.from(textElement.querySelectorAll('[data-image-schema-key]')).map(node => node.getAttribute('data-image-schema-key')));
+    const projectionPresent = expectedKeys.length > 0 && expectedKeys.every(key => renderedKeys.has(key));
+    if (projection.occurrences.length > 0 && !projectionPresent) {
+        textElement.innerHTML = context.messageFormatting(
+            projection.text,
+            message.name,
+            Boolean(message.is_system),
+            Boolean(message.is_user),
+            id,
+            {},
+            false,
+        );
+    }
+    rewriteImages(textElement, projection.occurrences, id);
 }
 
 function renderAllMessages() {
@@ -335,16 +331,13 @@ function onGenerationAfterCommands(type, options, dryRun) {
 
 function bindEvents() {
     const events = context.eventTypes || context.event_types;
-    if (typeof context.eventSource.makeLast === 'function') {
-        context.eventSource.makeLast(events.MESSAGE_RECEIVED, prepareMessageProjection);
-        boundEvents.push([events.MESSAGE_RECEIVED, prepareMessageProjection]);
-    } else {
-        listen(events.MESSAGE_RECEIVED, prepareMessageProjection);
-    }
     listen(events.CHARACTER_MESSAGE_RENDERED, renderMessage);
     listen(events.MESSAGE_UPDATED, renderMessage);
-    listen(events.MESSAGE_EDITED, renderMessage);
-    listen(events.MESSAGE_SWIPED, renderMessage);
+    // MESSAGE_EDITED fires while ST's textarea/editor DOM still exists. Wait for
+    // MESSAGE_UPDATED rather than replacing the editor subtree mid-edit.
+    // Swipe rendering is completed by SillyTavern before MESSAGE_SWIPED. Defer
+    // our DOM decoration until its swipe transition call stack has yielded.
+    listen(events.MESSAGE_SWIPED, messageId => requestAnimationFrame(() => renderMessage(messageId)));
     listen(events.CHAT_CHANGED, onChatChanged);
     listen(events.CHAT_LOADED, queueRenderAll);
     listen(events.MORE_MESSAGES_LOADED, queueRenderAll);
@@ -721,6 +714,27 @@ async function clearCache() {
     } catch (error) { notify('error', error.message); }
 }
 
+async function refreshPluginDiagnostics() {
+    const output = document.getElementById('image_schema_diagnostics_output');
+    try {
+        const result = await pluginFetch(`${ROUTES.diagnosticsRecent}?limit=100`);
+        if (output) output.textContent = JSON.stringify(result, null, 2);
+    } catch (error) {
+        if (output) output.textContent = `Diagnostics unavailable: ${error.message}`;
+    }
+}
+
+async function clearPluginDiagnostics() {
+    if (!window.confirm('Clear recorded plugin activity?')) return;
+    try {
+        await pluginFetch(ROUTES.diagnosticsClear, { method: 'POST', body: JSON.stringify({ scope: 'user' }) });
+        await refreshPluginDiagnostics();
+        notify('success', 'Plugin activity cleared.');
+    } catch (error) {
+        notify('error', error.message);
+    }
+}
+
 async function addSettingsUi() {
     if (document.getElementById('image_schema_settings')) return;
     const response = await fetch(new URL('./settings.html', import.meta.url));
@@ -745,6 +759,8 @@ async function addSettingsUi() {
     document.getElementById('image_schema_test_generation')?.addEventListener('click', testGeneration);
     document.getElementById('image_schema_refresh_cache')?.addEventListener('click', refreshCacheStats);
     document.getElementById('image_schema_clear_cache')?.addEventListener('click', clearCache);
+    document.getElementById('image_schema_diagnostics_refresh')?.addEventListener('click', refreshPluginDiagnostics);
+    document.getElementById('image_schema_diagnostics_clear')?.addEventListener('click', clearPluginDiagnostics);
     document.getElementById('image_schema_provider_profile')?.addEventListener('change', selectProvider);
     document.getElementById('image_schema_provider_refresh')?.addEventListener('click', () => refreshProviders(providerOriginalName).catch(error => notify('error', error.message)));
     document.getElementById('image_schema_provider_add')?.addEventListener('click', addProvider);
@@ -789,17 +805,7 @@ export async function clean() {
     }
     document.getElementById('image_schema_settings')?.remove();
     if (context?.chat) {
-        for (const message of context.chat) {
-            if (!message?.extra) continue;
-            const ownsDisplay = message.extra.display_text === message.extra.image_schema_display_text;
-            if (ownsDisplay) {
-                if (message.extra.image_schema_previous_display_text === undefined) delete message.extra.display_text;
-                else message.extra.display_text = message.extra.image_schema_previous_display_text;
-            }
-            delete message.extra.image_schema_original;
-            delete message.extra.image_schema_display_text;
-            delete message.extra.image_schema_previous_display_text;
-        }
+        for (const message of context.chat) clearLegacyProjectionMetadata(message);
     }
     if (context?.extensionSettings) {
         delete context.extensionSettings[MODULE_NAME];
