@@ -148,7 +148,9 @@ async function pluginFetch(route, options = {}) {
     const contentType = response.headers.get('content-type') || '';
     const body = contentType.includes('json') ? await response.json() : await response.text();
     if (!response.ok) {
-        const detail = typeof body === 'string' ? body : body?.error || body?.message || JSON.stringify(body);
+        const detail = typeof body === 'string'
+            ? body
+            : body?.error?.message ?? body?.message ?? body?.error?.code ?? JSON.stringify(body);
         throw new Error(`${response.status} ${response.statusText}${detail ? `: ${detail}` : ''}`);
     }
     return body;
@@ -617,7 +619,7 @@ function updateProviderPanels() {
     if (preview) {
         try {
             const resolved = resolveProviderUrl(type, value('image_schema_provider_url'), value('image_schema_provider_model'));
-            preview.textContent = resolved ? `Effective endpoint: ${resolved}` : '';
+            preview.textContent = resolved ? `Effective endpoint: ${resolved}${type === 'comfyui' && new URL(resolved).protocol === 'https:' ? ' · ComfyUI must actually be configured for TLS; the default listener uses http://' : ''}` : '';
             preview.dataset.state = 'ok';
         } catch (error) {
             preview.textContent = value('image_schema_provider_url') ? error.message : '';

@@ -203,6 +203,9 @@ export function resolveProviderUrl(type, input, model = '') {
     let url;
     try { url = new URL(raw); } catch { throw new Error('Provider URL must be a valid HTTP(S) URL'); }
     if (!['http:', 'https:'].includes(url.protocol)) throw new Error('Provider URL must use HTTP or HTTPS');
+    if (type === 'comfyui' && ['0.0.0.0', '127.0.0.1', 'localhost'].includes(url.hostname)) {
+        throw new Error('ComfyUI URL must be reachable from the SillyTavern server; use this PC’s LAN or Tailscale address, not a local/bind address');
+    }
     let pathname = url.pathname.replace(/\/+$/, '');
     if (type === 'openai') {
         if (/\/v1\/images\/generations$/i.test(pathname)) {
