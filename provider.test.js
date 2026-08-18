@@ -4,6 +4,8 @@ import test from 'node:test';
 import {
     PROVIDER_ROUTE_PATHS,
     buildProviderProfilePayload,
+    inferComfyWorkflowCandidates,
+    mergeComfyCandidates,
     normalizeComfyCandidates,
     normalizeProviderConfig,
     normalizeProviderProfile,
@@ -104,10 +106,26 @@ test('ComfyUI analyzer candidates normalize plugin and descriptor response shape
     assert.equal(candidates.outputNode[0].node, '9');
 });
 
+test('Krea2 analyzer response prioritizes upstream primitive prompt, seed, and SaveImage output', () => {
+    const workflow = {
+        230: { class_type: 'PrimitiveStringMultiline', inputs: { value: '' }, _meta: { title: 'Prompt' } },
+        262: { class_type: 'PrimitiveInt', inputs: { value: 69 }, _meta: { title: 'seed' } },
+        211: { class_type: 'SaveImage', inputs: { images: ['15', 0] } },
+    };
+    const candidates = mergeComfyCandidates(normalizeComfyCandidates({ candidates: {
+        prompt: [{ binding: { node: '230', input: 'value' }, confidence: 0.9, reason: 'Literal string input upstream' }],
+        outputNode: [{ node: '211', classType: 'SaveImage', confidence: 0.98 }],
+    } }), inferComfyWorkflowCandidates(workflow));
+    assert.deepEqual([candidates.positivePrompt[0].node, candidates.positivePrompt[0].input], ['230', 'value']);
+    assert.deepEqual([candidates.seed[0].node, candidates.seed[0].input], ['262', 'value']);
+    assert.equal(candidates.outputNode[0].node, '211');
+});
+
 test('ComfyUI save payload sends workflow and stable bindings without model fields', () => {
     const workflow = {
         6: { class_type: 'CLIPTextEncode', inputs: { text: 'hello' } },
         7: { class_type: 'KSampler', inputs: { seed: 0 } },
+        8: { class_type: 'ImageNode', inputs: {} },
         9: { class_type: 'SaveImage', inputs: { images: ['8', 0] } },
     };
     const payload = buildProviderProfilePayload({
@@ -120,13 +138,21 @@ test('ComfyUI save payload sends workflow and stable bindings without model fiel
         },
     });
     assert.deepEqual(payload, {
-        name: 'local-comfy', type: 'comfyui', url: 'http://127.0.0.1:8188', timeoutMs: 120000, defaults: {}, workflow,
+        name: 'local-comfy', type: 'comfyui', url: 'http://127.0.0.1:8188', timeoutMs: 120000, workflow,
         bindings: { prompt: { node: '6', input: 'text' }, seed: { node: '7', input: 'seed' } },
         outputNode: '9',
     });
     assert.equal(Object.hasOwn(payload, 'model'), false);
     assert.equal(Object.hasOwn(payload, 'allowedModels'), false);
     assert.throws(() => buildProviderProfilePayload({ name: 'bad', type: 'comfyui', url: 'http://localhost:8188', timeoutMs: 1000, workflow, bindings: {} }), /positive prompt binding/);
+    assert.throws(() => buildProviderProfilePayload({
+        name: 'stale', type: 'comfyui', url: 'http://localhost:8188', timeoutMs: 1000, workflow,
+        bindings: { positivePrompt: { node: '404', input: 'text' } },
+    }), /node 404 does not exist/);
+    assert.throws(() => buildProviderProfilePayload({
+        name: 'stale', type: 'comfyui', url: 'http://localhost:8188', timeoutMs: 1000, workflow,
+        bindings: { positivePrompt: { node: '6', input: 'missing' } },
+    }), /input missing does not exist/);
 });
 
 test('ComfyUI workflow parser accepts only non-empty JSON objects', () => {

@@ -93,6 +93,43 @@ export function normalizeComfyCandidates(input = {}) {
     return output;
 }
 
+export function inferComfyWorkflowCandidates(workflow) {
+    const output = Object.fromEntries(COMFY_BINDING_KEYS.map(key => [key, []]));
+    if (!isPlainObject(workflow)) return output;
+    for (const [node, descriptor] of Object.entries(workflow)) {
+        if (!isPlainObject(descriptor) || !isPlainObject(descriptor.inputs)) continue;
+        const classType = firstString(descriptor.class_type);
+        const title = firstString(descriptor._meta?.title);
+        const semanticName = `${classType} ${title}`;
+        for (const [input, literal] of Object.entries(descriptor.inputs)) {
+            if (typeof literal === 'string' && /prompt|string/i.test(`${semanticName} ${input}`)) {
+                output.positivePrompt.push(normalizeComfyBinding({ node, input, label: `${title || classType} · ${input}`, confidence: /prompt/i.test(title) ? 0.94 : 0.55, path: `/${node}/inputs/${input}` }));
+            }
+            if (Number.isSafeInteger(literal) && literal >= 0 && /seed/i.test(`${semanticName} ${input}`)) {
+                output.seed.push(normalizeComfyBinding({ node, input, label: `${title || classType} · ${input}`, confidence: 0.94, path: `/${node}/inputs/${input}` }));
+            }
+        }
+        if (/saveimage/i.test(classType)) output.outputNode.push(normalizeComfyBinding({ node, input: '', label: title || classType, confidence: 0.98, path: `/${node}` }));
+    }
+    for (const key of COMFY_BINDING_KEYS) output[key] = output[key].filter(Boolean).sort((left, right) => (right.confidence ?? -1) - (left.confidence ?? -1));
+    return output;
+}
+
+export function mergeComfyCandidates(...candidateSets) {
+    const output = Object.fromEntries(COMFY_BINDING_KEYS.map(key => [key, []]));
+    for (const key of COMFY_BINDING_KEYS) {
+        const seen = new Set();
+        output[key] = candidateSets.flatMap(set => set?.[key] || []).map(normalizeComfyBinding).filter(binding => {
+            if (!binding) return false;
+            const token = `${binding.node}\u0000${binding.input}`;
+            if (seen.has(token)) return false;
+            seen.add(token);
+            return true;
+        }).sort((left, right) => (right.confidence ?? -1) - (left.confidence ?? -1));
+    }
+    return output;
+}
+
 export function countComfyWorkflowNodes(workflow) {
     return isPlainObject(workflow) ? Object.keys(workflow).length : 0;
 }
@@ -107,6 +144,15 @@ export function parseComfyWorkflow(value) {
     return structuredClone(workflow);
 }
 
+function assertComfyBindingTarget(workflow, binding, label, { inputRequired = true } = {}) {
+    if (!binding) return;
+    const node = workflow[binding.node];
+    if (!isPlainObject(node)) throw new Error(`ComfyUI ${label} binding node ${binding.node} does not exist in the workflow`);
+    if (inputRequired && (!binding.input || !isPlainObject(node.inputs) || !Object.hasOwn(node.inputs, binding.input))) {
+        throw new Error(`ComfyUI ${label} binding input ${binding.input || '(empty)'} does not exist on node ${binding.node}`);
+    }
+}
+
 export function buildProviderProfilePayload(input = {}) {
     const type = PROVIDER_TYPES.includes(input.type) ? input.type : 'openai';
     const name = firstString(input.name);
@@ -118,22 +164,29 @@ export function buildProviderProfilePayload(input = {}) {
         type,
         url: resolveProviderUrl(type, input.url, input.model),
         timeoutMs,
-        defaults: isPlainObject(input.defaults) ? structuredClone(input.defaults) : {},
     };
     if (type === 'comfyui') {
+        if (isPlainObject(input.defaults) && Object.keys(input.defaults).length) profile.defaults = structuredClone(input.defaults);
         profile.workflow = parseComfyWorkflow(input.workflow);
         const selected = normalizeComfyBindings(input.bindings);
         if (!selected.positivePrompt?.input) throw new Error('ComfyUI positive prompt binding is required');
+        assertComfyBindingTarget(profile.workflow, selected.positivePrompt, 'positive prompt');
+        assertComfyBindingTarget(profile.workflow, selected.negativePrompt, 'negative prompt');
+        assertComfyBindingTarget(profile.workflow, selected.seed, 'seed');
+        assertComfyBindingTarget(profile.workflow, selected.width, 'width');
+        assertComfyBindingTarget(profile.workflow, selected.height, 'height');
+        assertComfyBindingTarget(profile.workflow, selected.outputNode, 'output node', { inputRequired: false });
         profile.bindings = {
             prompt: { node: selected.positivePrompt.node, input: selected.positivePrompt.input },
-            ...(selected.negativePrompt ? { negative: { node: selected.negativePrompt.node, input: selected.negativePrompt.input } } : {}),
-            ...(selected.seed ? { seed: { node: selected.seed.node, input: selected.seed.input } } : {}),
-            ...(selected.width ? { width: { node: selected.width.node, input: selected.width.input } } : {}),
-            ...(selected.height ? { height: { node: selected.height.node, input: selected.height.input } } : {}),
+            ...(selected.negativePrompt?.input ? { negative: { node: selected.negativePrompt.node, input: selected.negativePrompt.input } } : {}),
+            ...(selected.seed?.input ? { seed: { node: selected.seed.node, input: selected.seed.input } } : {}),
+            ...(selected.width?.input ? { width: { node: selected.width.node, input: selected.width.input } } : {}),
+            ...(selected.height?.input ? { height: { node: selected.height.node, input: selected.height.input } } : {}),
         };
         if (selected.outputNode) profile.outputNode = selected.outputNode.node;
         return profile;
     }
+    profile.defaults = isPlainObject(input.defaults) ? structuredClone(input.defaults) : {};
     profile.model = firstString(input.model);
     profile.allowedModels = normalizeAllowedModels(input.allowedModels);
     if (type === 'generic') profile.method = normalizeGenericMethod(input.method);

@@ -54,7 +54,8 @@
 
                         <div data-image-schema-provider-panel="comfyui" class="image-schema-comfy-panel">
                             <div class="image-schema-comfy-upload-row">
-                                <label for="image_schema_comfy_workflow_file">API workflow JSON<input id="image_schema_comfy_workflow_file" type="file" accept="application/json,.json"></label>
+                                <input id="image_schema_comfy_workflow_file" class="displayNone" type="file" accept="application/json,.json">
+                                <button id="image_schema_comfy_workflow_choose" type="button" class="menu_button"><i class="fa-solid fa-file-arrow-up"></i> Upload / replace API workflow</button>
                                 <button id="image_schema_comfy_workflow_clear" type="button" class="menu_button redWarningBG">Remove</button>
                             </div>
                             <div id="image_schema_comfy_workflow_status" class="image-schema-comfy-status" data-state="empty">No workflow loaded.</div>
