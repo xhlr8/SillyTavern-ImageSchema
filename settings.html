@@ -27,7 +27,7 @@
                     <div id="image_schema_provider_editor" class="image-schema-provider-editor">
                         <div class="image-schema-grid two">
                             <label for="image_schema_provider_name">Profile name<input id="image_schema_provider_name" class="text_pole" type="text" autocomplete="off"></label>
-                            <label for="image_schema_provider_type">Provider type<select id="image_schema_provider_type" class="text_pole"><option value="openai">OpenAI-compatible</option><option value="gemini-sse">Gemini SSE</option><option value="generic">Generic HTTP</option></select></label>
+                            <label for="image_schema_provider_type">Provider type<select id="image_schema_provider_type" class="text_pole"><option value="openai">OpenAI-compatible</option><option value="gemini-sse">Gemini SSE</option><option value="generic">Generic HTTP</option><option value="comfyui">ComfyUI workflow</option></select></label>
                         </div>
 
                         <label for="image_schema_provider_url"><span id="image_schema_provider_url_label">Provider URL</span><input id="image_schema_provider_url" class="text_pole" type="url" spellcheck="false" autocomplete="off" placeholder="https://provider.example"></label>
@@ -39,11 +39,11 @@
                         </div>
 
                         <div class="image-schema-grid two">
-                            <label for="image_schema_provider_model">Default model<input id="image_schema_provider_model" class="text_pole" type="text" autocomplete="off" placeholder="gpt-image-2"></label>
+                            <label id="image_schema_provider_model_field" for="image_schema_provider_model">Default model<input id="image_schema_provider_model" class="text_pole" type="text" autocomplete="off" placeholder="gpt-image-2"></label>
                             <label for="image_schema_provider_timeout">Timeout (ms)<input id="image_schema_provider_timeout" class="text_pole" type="number" min="1000" max="900000" step="1000"></label>
                         </div>
 
-                        <div class="image-schema-secret-row">
+                        <div id="image_schema_provider_secret_panel" class="image-schema-secret-row">
                             <span id="image_schema_provider_key_status" class="image-schema-status" data-state="checking">API key status unknown</span>
                             <label for="image_schema_provider_key">API key<input id="image_schema_provider_key" class="text_pole" type="password" autocomplete="new-password" placeholder="Leave blank to keep saved key"></label>
                             <div class="image-schema-button-row">
@@ -52,7 +52,26 @@
                             </div>
                         </div>
 
-                        <details class="image-schema-subsection">
+                        <div data-image-schema-provider-panel="comfyui" class="image-schema-comfy-panel">
+                            <div class="image-schema-comfy-upload-row">
+                                <label for="image_schema_comfy_workflow_file">API workflow JSON<input id="image_schema_comfy_workflow_file" type="file" accept="application/json,.json"></label>
+                                <button id="image_schema_comfy_workflow_clear" type="button" class="menu_button redWarningBG">Remove</button>
+                            </div>
+                            <div id="image_schema_comfy_workflow_status" class="image-schema-comfy-status" data-state="empty">No workflow loaded.</div>
+                            <small>Export ComfyUI in API format. The file is parsed locally, then included only in Analyze and Save requests.</small>
+                            <button id="image_schema_comfy_analyze" type="button" class="menu_button image-schema-comfy-analyze"><i class="fa-solid fa-magnifying-glass"></i> Analyze workflow</button>
+                            <div class="image-schema-grid two image-schema-comfy-bindings">
+                                <label for="image_schema_comfy_binding_positive">Positive prompt <span class="image-schema-required">required</span><select id="image_schema_comfy_binding_positive" class="text_pole"></select></label>
+                                <label for="image_schema_comfy_binding_negative">Negative prompt<select id="image_schema_comfy_binding_negative" class="text_pole"></select></label>
+                                <label for="image_schema_comfy_binding_seed">Seed<select id="image_schema_comfy_binding_seed" class="text_pole"></select></label>
+                                <label for="image_schema_comfy_binding_width">Width<select id="image_schema_comfy_binding_width" class="text_pole"></select></label>
+                                <label for="image_schema_comfy_binding_height">Height<select id="image_schema_comfy_binding_height" class="text_pole"></select></label>
+                                <label for="image_schema_comfy_binding_output">Output node<select id="image_schema_comfy_binding_output" class="text_pole"></select></label>
+                            </div>
+                            <div id="image_schema_comfy_validation" class="image-schema-operation-result" aria-live="polite">Load and analyze an API workflow to configure bindings.</div>
+                        </div>
+
+                        <details id="image_schema_provider_advanced" class="image-schema-subsection">
                             <summary>Provider advanced</summary>
                             <div class="image-schema-subsection-body">
                                 <label for="image_schema_provider_allowed_models">Allowed model overrides<textarea id="image_schema_provider_allowed_models" class="text_pole image-schema-textarea" rows="3" placeholder="One model per line"></textarea></label>
@@ -68,7 +87,6 @@
                             <button id="image_schema_provider_set_default" type="button" class="menu_button">Set default</button>
                         </div>
                         <div id="image_schema_provider_result" class="image-schema-operation-result" aria-live="polite"></div>
-                        <small class="image-schema-future-note"><i class="fa-solid fa-diagram-project"></i> ComfyUI workflow profiles are planned for a future provider type.</small>
                     </div>
                 </div>
             </details>

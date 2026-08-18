@@ -1,5 +1,6 @@
-export const PROVIDER_TYPES = Object.freeze(['openai', 'gemini-sse', 'generic']);
+export const PROVIDER_TYPES = Object.freeze(['openai', 'gemini-sse', 'generic', 'comfyui']);
 export const GENERIC_METHODS = Object.freeze(['GET', 'POST']);
+export const COMFY_BINDING_KEYS = Object.freeze(['positivePrompt', 'negativePrompt', 'seed', 'width', 'height', 'outputNode']);
 
 export const PROVIDER_ROUTE_PATHS = Object.freeze({
     config: '/providers/config',
@@ -8,6 +9,7 @@ export const PROVIDER_ROUTE_PATHS = Object.freeze({
     defaultProfile: '/providers/default',
     secret: '/providers/secret',
     profileTest: '/providers/profile/test',
+    comfyAnalyze: '/providers/comfy/analyze',
 });
 
 const DEFAULT_TIMEOUT_MS = 120000;
@@ -24,6 +26,118 @@ function firstString(...values) {
 function normalizeAllowedModels(value) {
     const models = Array.isArray(value) ? value : typeof value === 'string' ? value.split(/[\n,]/) : [];
     return [...new Set(models.map(model => String(model).trim()).filter(Boolean))];
+}
+
+function clonePlainObject(value) {
+    return isPlainObject(value) ? structuredClone(value) : null;
+}
+
+export function normalizeComfyBinding(value) {
+    if (!isPlainObject(value)) return null;
+    const coordinate = isPlainObject(value.binding) ? value.binding : value;
+    if (coordinate.node === undefined || coordinate.node === null || String(coordinate.node).trim() === '') return null;
+    const confidence = Number(value.confidence ?? coordinate.confidence);
+    const rawPath = value.path ?? coordinate.path;
+    const path = Array.isArray(rawPath)
+        ? rawPath.map(step => isPlainObject(step) ? [step.node, step.input].filter(Boolean).join('.') : String(step)).join(' → ')
+        : firstString(rawPath);
+    const binding = {
+        node: String(coordinate.node).trim(),
+        input: firstString(coordinate.input),
+        label: firstString(value.label, value.reason, coordinate.label, value.classType, coordinate.classType),
+        path,
+    };
+    if (Number.isFinite(confidence)) binding.confidence = confidence;
+    const warning = firstString(value.warning, coordinate.warning);
+    if (warning) binding.warning = warning;
+    return binding;
+}
+
+export function normalizeComfyBindings(value, outputNode = undefined) {
+    const source = isPlainObject(value) ? value : {};
+    const aliases = {
+        positivePrompt: ['positivePrompt', 'prompt', 'positive'],
+        negativePrompt: ['negativePrompt', 'negative'],
+        seed: ['seed'],
+        width: ['width'],
+        height: ['height'],
+        outputNode: ['outputNode', 'output'],
+    };
+    const output = {};
+    for (const key of COMFY_BINDING_KEYS) {
+        const raw = aliases[key].map(alias => source[alias]).find(item => item !== undefined);
+        output[key] = normalizeComfyBinding(raw);
+    }
+    const standaloneOutput = outputNode ?? source.outputNode;
+    if (!output.outputNode && standaloneOutput !== undefined && standaloneOutput !== null && String(standaloneOutput).trim()) {
+        output.outputNode = normalizeComfyBinding({ node: standaloneOutput, input: '' });
+    }
+    return output;
+}
+
+export function normalizeComfyCandidates(input = {}) {
+    const source = isPlainObject(input?.candidates) ? input.candidates : isPlainObject(input) ? input : {};
+    const aliases = {
+        positivePrompt: ['positivePrompt', 'positive_prompt', 'positive', 'prompt'],
+        negativePrompt: ['negativePrompt', 'negative_prompt', 'negative'],
+        seed: ['seed'],
+        width: ['width'],
+        height: ['height'],
+        outputNode: ['outputNode', 'output_node', 'output'],
+    };
+    const output = {};
+    for (const key of COMFY_BINDING_KEYS) {
+        const raw = aliases[key].map(alias => source[alias]).find(Array.isArray) || [];
+        output[key] = raw.map(normalizeComfyBinding).filter(Boolean).sort((left, right) => (right.confidence ?? -1) - (left.confidence ?? -1));
+    }
+    return output;
+}
+
+export function countComfyWorkflowNodes(workflow) {
+    return isPlainObject(workflow) ? Object.keys(workflow).length : 0;
+}
+
+export function parseComfyWorkflow(value) {
+    let workflow = value;
+    if (typeof value === 'string') {
+        try { workflow = JSON.parse(value); }
+        catch (error) { throw new Error(`ComfyUI workflow must be valid JSON: ${error.message}`); }
+    }
+    if (!isPlainObject(workflow) || !countComfyWorkflowNodes(workflow)) throw new Error('ComfyUI workflow must be a non-empty JSON object exported in API format');
+    return structuredClone(workflow);
+}
+
+export function buildProviderProfilePayload(input = {}) {
+    const type = PROVIDER_TYPES.includes(input.type) ? input.type : 'openai';
+    const name = firstString(input.name);
+    if (!name) throw new Error('Provider profile name is required');
+    const timeoutMs = Number(input.timeoutMs);
+    if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1) throw new Error('Provider timeout must be a positive integer');
+    const profile = {
+        name,
+        type,
+        url: resolveProviderUrl(type, input.url, input.model),
+        timeoutMs,
+        defaults: isPlainObject(input.defaults) ? structuredClone(input.defaults) : {},
+    };
+    if (type === 'comfyui') {
+        profile.workflow = parseComfyWorkflow(input.workflow);
+        const selected = normalizeComfyBindings(input.bindings);
+        if (!selected.positivePrompt?.input) throw new Error('ComfyUI positive prompt binding is required');
+        profile.bindings = {
+            prompt: { node: selected.positivePrompt.node, input: selected.positivePrompt.input },
+            ...(selected.negativePrompt ? { negative: { node: selected.negativePrompt.node, input: selected.negativePrompt.input } } : {}),
+            ...(selected.seed ? { seed: { node: selected.seed.node, input: selected.seed.input } } : {}),
+            ...(selected.width ? { width: { node: selected.width.node, input: selected.width.input } } : {}),
+            ...(selected.height ? { height: { node: selected.height.node, input: selected.height.input } } : {}),
+        };
+        if (selected.outputNode) profile.outputNode = selected.outputNode.node;
+        return profile;
+    }
+    profile.model = firstString(input.model);
+    profile.allowedModels = normalizeAllowedModels(input.allowedModels);
+    if (type === 'generic') profile.method = normalizeGenericMethod(input.method);
+    return profile;
 }
 
 export function normalizeGenericMethod(value) {
@@ -81,17 +195,23 @@ export function normalizeProviderProfile(input = {}, fallbackName = '') {
     const source = isPlainObject(input) ? input : {};
     const type = PROVIDER_TYPES.includes(source.type) ? source.type : 'openai';
     const timeoutValue = Number(source.timeoutMs ?? source.timeout);
-    return {
+    const profile = {
         name: firstString(source.name, source.id, fallbackName),
         type,
         url: firstString(source.url, source.baseUrl, source.endpoint),
         method: type === 'generic' ? normalizeGenericMethod(source.method) : '',
-        model: firstString(source.model),
-        allowedModels: normalizeAllowedModels(source.allowedModels),
+        model: type === 'comfyui' ? '' : firstString(source.model),
+        allowedModels: type === 'comfyui' ? [] : normalizeAllowedModels(source.allowedModels),
         timeoutMs: Number.isSafeInteger(timeoutValue) && timeoutValue > 0 ? timeoutValue : DEFAULT_TIMEOUT_MS,
         defaults: isPlainObject(source.defaults) ? structuredClone(source.defaults) : {},
-        apiKeyConfigured: Boolean(source.apiKeyConfigured ?? source.hasApiKey ?? source.hasSecret ?? source.secretConfigured),
+        apiKeyConfigured: type === 'comfyui' ? false : Boolean(source.apiKeyConfigured ?? source.hasApiKey ?? source.hasSecret ?? source.secretConfigured),
     };
+    if (type === 'comfyui') {
+        profile.workflow = clonePlainObject(source.workflow);
+        profile.workflowName = firstString(source.workflowName, source.workflow?.name);
+        profile.bindings = normalizeComfyBindings(source.bindings, source.outputNode);
+    }
+    return profile;
 }
 
 export function normalizeProviderConfig(input = {}) {

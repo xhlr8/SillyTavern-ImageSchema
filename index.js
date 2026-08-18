@@ -9,14 +9,19 @@ import {
     projectSchemas,
 } from './parser.js';
 import {
+    COMFY_BINDING_KEYS,
     PROVIDER_ROUTE_PATHS,
+    buildProviderProfilePayload,
+    countComfyWorkflowNodes,
+    normalizeComfyBinding,
+    normalizeComfyCandidates,
     normalizeGenericMethod,
     normalizeProviderConfig,
     normalizeProviderProfile,
     displayProviderUrl,
-    resolveProviderUrl,
     parseAllowedModels,
     parseProviderDefaults,
+    parseComfyWorkflow,
     redactSensitiveValue,
     serializeProviderDefaults,
 } from './provider.js';
@@ -36,6 +41,7 @@ export const ROUTES = Object.freeze({
     providerDefault: `${PLUGIN_BASE}${PROVIDER_ROUTE_PATHS.defaultProfile}`,
     providerSecret: `${PLUGIN_BASE}${PROVIDER_ROUTE_PATHS.secret}`,
     providerProfileTest: `${PLUGIN_BASE}${PROVIDER_ROUTE_PATHS.profileTest}`,
+    providerComfyAnalyze: `${PLUGIN_BASE}${PROVIDER_ROUTE_PATHS.comfyAnalyze}`,
     diagnosticsRecent: `${PLUGIN_BASE}/diagnostics/recent`,
     diagnosticsClear: `${PLUGIN_BASE}/diagnostics/clear`,
 });
@@ -48,6 +54,9 @@ let renderQueued = false;
 let promptIsArmed = false;
 let providerConfig = { profiles: [], defaultProfile: '' };
 let providerOriginalName = '';
+let comfyWorkflow = null;
+let comfyWorkflowName = '';
+let comfyCandidates = Object.fromEntries(COMFY_BINDING_KEYS.map(key => [key, []]));
 const boundEvents = [];
 
 function listen(event, handler) {
@@ -397,23 +406,171 @@ function setProviderResult(value) {
     output.textContent = typeof value === 'string' ? value : JSON.stringify(redactSensitiveValue(value), null, 2);
 }
 
+const COMFY_BINDING_CONTROLS = Object.freeze({
+    positivePrompt: 'image_schema_comfy_binding_positive',
+    negativePrompt: 'image_schema_comfy_binding_negative',
+    seed: 'image_schema_comfy_binding_seed',
+    width: 'image_schema_comfy_binding_width',
+    height: 'image_schema_comfy_binding_height',
+    outputNode: 'image_schema_comfy_binding_output',
+});
+
+function comfyBindingToken(binding) {
+    return binding ? JSON.stringify({ node: binding.node, input: binding.input || '' }) : '';
+}
+
+function readComfyBinding(key) {
+    const raw = value(COMFY_BINDING_CONTROLS[key]);
+    if (!raw) return null;
+    try { return normalizeComfyBinding(JSON.parse(raw)); } catch { return null; }
+}
+
+function comfyBindingsFromForm() {
+    return Object.fromEntries(COMFY_BINDING_KEYS.map(key => [key, readComfyBinding(key)]));
+}
+
+function formatComfyBinding(binding) {
+    const coordinate = `${binding.node}${binding.input ? ` · ${binding.input}` : ''}`;
+    const confidence = Number.isFinite(binding.confidence) ? ` · ${Math.round(binding.confidence * 100)}%` : '';
+    const warning = binding.warning ? ' ⚠' : '';
+    return `${binding.label || coordinate}${confidence}${warning}`;
+}
+
+function populateComfyBindingSelect(key, selected = null) {
+    const select = document.getElementById(COMFY_BINDING_CONTROLS[key]);
+    if (!(select instanceof HTMLSelectElement)) return;
+    const candidates = comfyCandidates[key] || [];
+    select.replaceChildren();
+    if (key !== 'positivePrompt') {
+        const none = document.createElement('option');
+        none.value = '';
+        none.textContent = 'None';
+        select.append(none);
+    } else if (!candidates.length && !selected) {
+        const missing = document.createElement('option');
+        missing.value = '';
+        missing.textContent = 'No candidates — analyze workflow';
+        select.append(missing);
+    }
+    const selectedBinding = normalizeComfyBinding(selected);
+    const merged = [...candidates];
+    if (selectedBinding && !merged.some(candidate => comfyBindingToken(candidate) === comfyBindingToken(selectedBinding))) merged.unshift(selectedBinding);
+    for (const binding of merged) {
+        const option = document.createElement('option');
+        option.value = comfyBindingToken(binding);
+        option.textContent = formatComfyBinding(binding);
+        option.title = [binding.path, binding.warning].filter(Boolean).join(' — ');
+        select.append(option);
+    }
+    const selectedToken = comfyBindingToken(selectedBinding);
+    if (selectedToken && Array.from(select.options).some(option => option.value === selectedToken)) select.value = selectedToken;
+    else if (candidates.length) select.value = comfyBindingToken(candidates[0]);
+    else select.value = '';
+}
+
+function updateComfyValidation(message = '') {
+    const validation = document.getElementById('image_schema_comfy_validation');
+    if (!validation) return;
+    const positive = readComfyBinding('positivePrompt');
+    const warnings = COMFY_BINDING_KEYS.map(key => readComfyBinding(key)?.warning).filter(Boolean);
+    const valid = Boolean(comfyWorkflow && positive?.input);
+    validation.dataset.state = valid ? 'ok' : 'error';
+    validation.textContent = message || (valid
+        ? `Ready to save. Positive prompt is bound${warnings.length ? `; ${warnings.length} selected binding warning(s).` : '.'}`
+        : !comfyWorkflow ? 'Load an API workflow JSON file.' : 'Analyze the workflow and select a required positive prompt binding.');
+}
+
+function updateComfyWorkflowStatus(error = '') {
+    const status = document.getElementById('image_schema_comfy_workflow_status');
+    if (!status) return;
+    if (error) {
+        status.dataset.state = 'error';
+        status.textContent = error;
+    } else if (comfyWorkflow) {
+        status.dataset.state = 'ok';
+        status.textContent = `${comfyWorkflowName || 'Workflow JSON'} · ${countComfyWorkflowNodes(comfyWorkflow)} node(s) · loaded`;
+    } else {
+        status.dataset.state = 'empty';
+        status.textContent = 'No workflow loaded.';
+    }
+}
+
+function resetComfyCandidates(bindings = {}) {
+    comfyCandidates = Object.fromEntries(COMFY_BINDING_KEYS.map(key => [key, []]));
+    for (const key of COMFY_BINDING_KEYS) populateComfyBindingSelect(key, bindings[key]);
+    updateComfyValidation();
+}
+
+async function importComfyWorkflow(event) {
+    const file = event.currentTarget?.files?.[0];
+    if (!file) return;
+    try {
+        comfyWorkflow = parseComfyWorkflow(await file.text());
+        comfyWorkflowName = file.name;
+        updateComfyWorkflowStatus();
+        resetComfyCandidates();
+        setProviderResult('Workflow parsed locally. Analyze it to discover bindings.');
+    } catch (error) {
+        comfyWorkflow = null;
+        comfyWorkflowName = '';
+        updateComfyWorkflowStatus(error.message);
+        resetComfyCandidates();
+        setProviderResult(error.message);
+    } finally {
+        event.currentTarget.value = '';
+    }
+}
+
+function clearComfyWorkflow() {
+    comfyWorkflow = null;
+    comfyWorkflowName = '';
+    updateComfyWorkflowStatus();
+    resetComfyCandidates();
+    setProviderResult('Workflow removed from this unsaved profile.');
+}
+
+async function analyzeComfyWorkflow() {
+    try {
+        if (!comfyWorkflow) throw new Error('Load an API workflow JSON file before analyzing');
+        setProviderResult('Analyzing workflow structure…');
+        const result = await pluginFetch(ROUTES.providerComfyAnalyze, {
+            method: 'POST',
+            body: JSON.stringify({ url: resolveProviderUrl('comfyui', value('image_schema_provider_url')), workflow: comfyWorkflow }),
+        });
+        const analysis = result?.analysis || result;
+        comfyCandidates = normalizeComfyCandidates(analysis);
+        for (const key of COMFY_BINDING_KEYS) populateComfyBindingSelect(key);
+        const validation = analysis?.validation;
+        const valid = validation?.valid ?? analysis?.valid;
+        const issues = [
+            ...(analysis?.missingClassTypes?.length ? [`Missing node classes: ${analysis.missingClassTypes.join(', ')}`] : []),
+            ...(analysis?.warnings || []),
+        ];
+        const message = validation?.message || analysis?.message || (valid === false ? 'Analyzer reported workflow validation errors.' : 'Analysis complete. Review the selected bindings.');
+        updateComfyValidation(issues.length ? `${message} ${issues.join(' ')}` : message);
+        setProviderResult({ message, nodeCount: analysis?.nodeCount ?? countComfyWorkflowNodes(comfyWorkflow), warnings: issues });
+    } catch (error) {
+        updateComfyValidation(error.message);
+        setProviderResult(error.message);
+        notify('error', error.message);
+    }
+}
+
 function providerPayload() {
-    const name = value('image_schema_provider_name').trim();
-    if (!name) throw new Error('Provider profile name is required');
-    const timeoutMs = Number(value('image_schema_provider_timeout'));
-    if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1) throw new Error('Provider timeout must be a positive integer');
     const type = value('image_schema_provider_type');
-    const profile = {
-        name,
+    return buildProviderProfilePayload({
+        name: value('image_schema_provider_name'),
         type,
-        url: resolveProviderUrl(type, value('image_schema_provider_url'), value('image_schema_provider_model')),
-        model: value('image_schema_provider_model').trim(),
+        url: value('image_schema_provider_url'),
+        model: value('image_schema_provider_model'),
         allowedModels: parseAllowedModels(value('image_schema_provider_allowed_models')),
-        timeoutMs,
+        timeoutMs: Number(value('image_schema_provider_timeout')),
         defaults: parseProviderDefaults(value('image_schema_provider_defaults')),
-    };
-    if (type === 'generic') profile.method = normalizeGenericMethod(value('image_schema_provider_method'));
-    return profile;
+        method: type === 'generic' ? normalizeGenericMethod(value('image_schema_provider_method')) : undefined,
+        workflow: comfyWorkflow,
+        workflowName: comfyWorkflowName,
+        bindings: comfyBindingsFromForm(),
+    });
 }
 
 function updateProviderPanels() {
@@ -421,13 +578,18 @@ function updateProviderPanels() {
     document.querySelectorAll('[data-image-schema-provider-panel]').forEach(panel => {
         panel.classList.toggle('displayNone', panel.getAttribute('data-image-schema-provider-panel') !== type);
     });
+    const isComfy = type === 'comfyui';
+    document.getElementById('image_schema_provider_model_field')?.classList.toggle('displayNone', isComfy);
+    document.getElementById('image_schema_provider_secret_panel')?.classList.toggle('displayNone', isComfy);
+    document.getElementById('image_schema_provider_advanced')?.classList.toggle('displayNone', isComfy);
     const label = document.getElementById('image_schema_provider_url_label');
     const help = document.getElementById('image_schema_provider_url_help');
     const preview = document.getElementById('image_schema_provider_url_preview');
-    if (label) label.textContent = type === 'openai' ? 'API base URL or generations endpoint' : type === 'gemini-sse' ? 'API base URL or stream endpoint' : 'Provider URL';
+    if (label) label.textContent = type === 'openai' ? 'API base URL or generations endpoint' : type === 'gemini-sse' ? 'API base URL or stream endpoint' : isComfy ? 'ComfyUI server URL' : 'Provider URL';
     if (help) help.textContent = type === 'openai'
         ? 'A base URL automatically uses /v1/images/generations. A complete generations endpoint is preserved.'
-        : type === 'gemini-sse' ? 'Gemini 3 image models use /v1beta/interactions. Older image models use streamGenerateContent. Complete endpoints are preserved.' : 'Enter the complete generic request URL.';
+        : type === 'gemini-sse' ? 'Gemini 3 image models use /v1beta/interactions. Older image models use streamGenerateContent. Complete endpoints are preserved.'
+            : isComfy ? 'Enter the ComfyUI server base URL. Model, VAE, LoRA, sampler, and other generation settings remain owned by the workflow.' : 'Enter the complete generic request URL.';
     if (preview) {
         try {
             const resolved = resolveProviderUrl(type, value('image_schema_provider_url'), value('image_schema_provider_model'));
@@ -460,8 +622,13 @@ function populateProviderEditor(profileInput) {
     setValue('image_schema_provider_defaults', serializeProviderDefaults(profile.defaults));
     setValue('image_schema_provider_key', '');
     setChecked('image_schema_provider_make_default', profile.name !== '' && profile.name === providerConfig.defaultProfile);
+    comfyWorkflow = profile.workflow ? structuredClone(profile.workflow) : null;
+    comfyWorkflowName = profile.workflowName || (comfyWorkflow && profile.name ? `${profile.name} workflow` : '');
+    resetComfyCandidates(profile.bindings);
+    updateComfyWorkflowStatus();
     updateProviderSecretStatus(profile.apiKeyConfigured);
     updateProviderPanels();
+    if (profile.type === 'comfyui') updateComfyValidation();
 }
 
 function renderProviderSelector(selectedName = '') {
@@ -792,6 +959,10 @@ async function addSettingsUi() {
     document.getElementById('image_schema_provider_type')?.addEventListener('change', updateProviderPanels);
     document.getElementById('image_schema_provider_url')?.addEventListener('input', updateProviderPanels);
     document.getElementById('image_schema_provider_model')?.addEventListener('input', updateProviderPanels);
+    document.getElementById('image_schema_comfy_workflow_file')?.addEventListener('change', importComfyWorkflow);
+    document.getElementById('image_schema_comfy_workflow_clear')?.addEventListener('click', clearComfyWorkflow);
+    document.getElementById('image_schema_comfy_analyze')?.addEventListener('click', analyzeComfyWorkflow);
+    for (const id of Object.values(COMFY_BINDING_CONTROLS)) document.getElementById(id)?.addEventListener('change', () => updateComfyValidation());
     document.getElementById('image_schema_provider_save')?.addEventListener('click', saveProvider);
     document.getElementById('image_schema_provider_set_default')?.addEventListener('click', setDefaultProvider);
     document.getElementById('image_schema_provider_key_replace')?.addEventListener('click', replaceProviderSecret);

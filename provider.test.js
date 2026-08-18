@@ -3,10 +3,13 @@ import test from 'node:test';
 
 import {
     PROVIDER_ROUTE_PATHS,
+    buildProviderProfilePayload,
+    normalizeComfyCandidates,
     normalizeProviderConfig,
     normalizeProviderProfile,
-    displayProviderUrl,
     resolveProviderUrl,
+    displayProviderUrl,
+    parseComfyWorkflow,
     parseAllowedModels,
     parseProviderDefaults,
     redactSensitiveValue,
@@ -20,6 +23,7 @@ test('provider routes use the anticipated server contract', () => {
         defaultProfile: '/providers/default',
         secret: '/providers/secret',
         profileTest: '/providers/profile/test',
+        comfyAnalyze: '/providers/comfy/analyze',
     });
 });
 
@@ -58,6 +62,78 @@ test('generic profiles normalize method and safe defaults', () => {
     assert.equal(profile.method, 'POST');
     assert.deepEqual(profile.allowedModels, ['one', 'two']);
     assert.deepEqual(profile.defaults, { width: 512 });
+});
+
+test('ComfyUI profile config round-trips workflow and maps persisted binding contract', () => {
+    const workflow = {
+        6: { class_type: 'CLIPTextEncode', inputs: { text: 'hello' } },
+        9: { class_type: 'SaveImage', inputs: { images: ['8', 0] } },
+    };
+    const profile = normalizeProviderProfile({
+        name: 'local-comfy',
+        type: 'comfyui',
+        url: 'http://127.0.0.1:8188',
+        workflow,
+        bindings: { prompt: { node: 6, input: 'text' }, seed: { node: '7', input: 'seed' } },
+        outputNode: 9,
+        model: 'must-not-leak',
+        allowedModels: ['must-not-leak'],
+        apiKeyConfigured: true,
+    });
+    assert.deepEqual(profile.workflow, workflow);
+    assert.notEqual(profile.workflow, workflow);
+    assert.deepEqual(profile.bindings.positivePrompt, { node: '6', input: 'text', label: '', path: '' });
+    assert.deepEqual(profile.bindings.outputNode, { node: '9', input: '', label: '', path: '' });
+    assert.equal(profile.model, '');
+    assert.deepEqual(profile.allowedModels, []);
+    assert.equal(profile.apiKeyConfigured, false);
+});
+
+test('ComfyUI analyzer candidates normalize plugin and descriptor response shapes by confidence', () => {
+    const candidates = normalizeComfyCandidates({ analysis: { ignored: true }, candidates: {
+        prompt: [
+            { binding: { node: '2', input: 'text' }, confidence: 0.4, reason: 'fallback', path: [{ node: '2', input: 'text' }] },
+            { node: '1', input: 'text', label: 'Best prompt', confidence: 0.98, path: '/1/inputs/text', warning: 'Review' },
+        ],
+        outputNode: [{ node: '9', classType: 'SaveImage', confidence: 0.9 }],
+    } });
+    assert.equal(candidates.positivePrompt[0].node, '1');
+    assert.equal(candidates.positivePrompt[0].warning, 'Review');
+    assert.equal(candidates.positivePrompt[1].label, 'fallback');
+    assert.match(candidates.positivePrompt[1].path, /2\.text/);
+    assert.equal(candidates.outputNode[0].node, '9');
+});
+
+test('ComfyUI save payload sends workflow and stable bindings without model fields', () => {
+    const workflow = {
+        6: { class_type: 'CLIPTextEncode', inputs: { text: 'hello' } },
+        7: { class_type: 'KSampler', inputs: { seed: 0 } },
+        9: { class_type: 'SaveImage', inputs: { images: ['8', 0] } },
+    };
+    const payload = buildProviderProfilePayload({
+        name: 'local-comfy', type: 'comfyui', url: 'http://127.0.0.1:8188/', timeoutMs: 120000,
+        workflow, model: 'ignored', allowedModels: ['ignored'], defaults: {},
+        bindings: {
+            positivePrompt: { node: '6', input: 'text', label: 'Prompt', confidence: 0.99, warning: 'not persisted' },
+            seed: { node: '7', input: 'seed', path: '/7/inputs/seed' },
+            outputNode: { node: '9', input: '' },
+        },
+    });
+    assert.deepEqual(payload, {
+        name: 'local-comfy', type: 'comfyui', url: 'http://127.0.0.1:8188', timeoutMs: 120000, defaults: {}, workflow,
+        bindings: { prompt: { node: '6', input: 'text' }, seed: { node: '7', input: 'seed' } },
+        outputNode: '9',
+    });
+    assert.equal(Object.hasOwn(payload, 'model'), false);
+    assert.equal(Object.hasOwn(payload, 'allowedModels'), false);
+    assert.throws(() => buildProviderProfilePayload({ name: 'bad', type: 'comfyui', url: 'http://localhost:8188', timeoutMs: 1000, workflow, bindings: {} }), /positive prompt binding/);
+});
+
+test('ComfyUI workflow parser accepts only non-empty JSON objects', () => {
+    assert.deepEqual(parseComfyWorkflow('{"1":{"class_type":"Test","inputs":{}}}'), { 1: { class_type: 'Test', inputs: {} } });
+    assert.throws(() => parseComfyWorkflow('[]'), /non-empty JSON object/);
+    assert.throws(() => parseComfyWorkflow('{}'), /non-empty JSON object/);
+    assert.throws(() => parseComfyWorkflow('{bad'), /valid JSON/);
 });
 
 test('allowed models and defaults parsing validate user input', () => {
