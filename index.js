@@ -155,6 +155,12 @@ function renderError(target, error) {
     wrapper?.querySelector('.image-schema-state')?.replaceChildren(document.createTextNode(error));
 }
 
+function imageFailureLabel(image) {
+    const code = image.dataset.imageError || '';
+    if (code === 'safety' || code === 'rate_limit' || code === 'invalid_request') return 'Rejected prompt';
+    return 'Image generation failed';
+}
+
 function addImageControls(image, request, messageId, occurrence) {
     let frame = image.closest('.image-schema-frame');
     if (!frame) {
@@ -184,7 +190,7 @@ function addImageControls(image, request, messageId, occurrence) {
         });
         image.addEventListener('error', () => {
             image.classList.remove('image-schema-loaded');
-            if (!image.classList.contains('image-schema-failed')) state.textContent = 'Image generation failed. Check plugin status.';
+            if (!image.classList.contains('image-schema-failed')) state.textContent = `${imageFailureLabel(image)}. Check Plugin activity for details.`;
         });
     }
     if (image.complete && image.naturalWidth > 0) {
@@ -400,7 +406,7 @@ function providerPayload() {
     const profile = {
         name,
         type,
-        url: resolveProviderUrl(type, value('image_schema_provider_url')),
+        url: resolveProviderUrl(type, value('image_schema_provider_url'), value('image_schema_provider_model')),
         model: value('image_schema_provider_model').trim(),
         allowedModels: parseAllowedModels(value('image_schema_provider_allowed_models')),
         timeoutMs,
@@ -418,13 +424,13 @@ function updateProviderPanels() {
     const label = document.getElementById('image_schema_provider_url_label');
     const help = document.getElementById('image_schema_provider_url_help');
     const preview = document.getElementById('image_schema_provider_url_preview');
-    if (label) label.textContent = type === 'openai' ? 'API base URL or generations endpoint' : 'Provider URL';
+    if (label) label.textContent = type === 'openai' ? 'API base URL or generations endpoint' : type === 'gemini-sse' ? 'API base URL or stream endpoint' : 'Provider URL';
     if (help) help.textContent = type === 'openai'
         ? 'A base URL automatically uses /v1/images/generations. A complete generations endpoint is preserved.'
-        : type === 'gemini-sse' ? 'Enter the complete Gemini streamGenerateContent endpoint.' : 'Enter the complete generic request URL.';
+        : type === 'gemini-sse' ? 'A base URL uses /v1beta/models/{model}:streamGenerateContent. A complete stream endpoint is preserved.' : 'Enter the complete generic request URL.';
     if (preview) {
         try {
-            const resolved = resolveProviderUrl(type, value('image_schema_provider_url'));
+            const resolved = resolveProviderUrl(type, value('image_schema_provider_url'), value('image_schema_provider_model'));
             preview.textContent = resolved ? `Effective endpoint: ${resolved}` : '';
             preview.dataset.state = 'ok';
         } catch (error) {
@@ -785,6 +791,7 @@ async function addSettingsUi() {
     document.getElementById('image_schema_provider_delete')?.addEventListener('click', deleteProvider);
     document.getElementById('image_schema_provider_type')?.addEventListener('change', updateProviderPanels);
     document.getElementById('image_schema_provider_url')?.addEventListener('input', updateProviderPanels);
+    document.getElementById('image_schema_provider_model')?.addEventListener('input', updateProviderPanels);
     document.getElementById('image_schema_provider_save')?.addEventListener('click', saveProvider);
     document.getElementById('image_schema_provider_set_default')?.addEventListener('click', setDefaultProvider);
     document.getElementById('image_schema_provider_key_replace')?.addEventListener('click', replaceProviderSecret);

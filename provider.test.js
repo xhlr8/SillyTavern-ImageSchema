@@ -74,6 +74,10 @@ test('OpenAI base URLs resolve to the generations endpoint without double-append
     assert.equal(resolveProviderUrl('openai', 'https://example.test/openai-image/v1/images/generations'), 'https://example.test/openai-image/v1/images/generations');
     assert.equal(displayProviderUrl('openai', 'https://example.test/openai-image/v1/images/generations'), 'https://example.test/openai-image');
     assert.equal(resolveProviderUrl('generic', 'https://example.test/path/'), 'https://example.test/path');
+    assert.equal(resolveProviderUrl('gemini-sse', 'https://example.test/google-ai', 'gemini-image'), 'https://example.test/google-ai/v1beta/models/gemini-image:streamGenerateContent');
+    assert.equal(resolveProviderUrl('gemini-sse', 'https://example.test/google-ai/v1beta/models/gemini-image:streamGenerateContent', 'gemini-image'), 'https://example.test/google-ai/v1beta/models/gemini-image:streamGenerateContent');
+    assert.equal(displayProviderUrl('gemini-sse', 'https://example.test/google-ai/v1beta/models/gemini-image:streamGenerateContent'), 'https://example.test/google-ai');
+    assert.throws(() => resolveProviderUrl('gemini-sse', 'https://example.test/google-ai', ''), /model is required/);
     assert.throws(() => resolveProviderUrl('openai', 'not a URL'), /valid HTTP/);
 });
 
