@@ -21,6 +21,7 @@ import {
     normalizeProviderConfig,
     normalizeProviderProfile,
     displayProviderUrl,
+    resolveProviderUrl,
     parseAllowedModels,
     parseProviderDefaults,
     parseComfyWorkflow,
