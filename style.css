@@ -2,10 +2,13 @@
     margin-top: 0.5rem;
 }
 
-.image-schema-drawer-stack {
-    display: flex;
-    flex-direction: column;
-    gap: 0.45rem;
+/* Do not set display here: SillyTavern owns display:none/block for drawer state. */
+.image-schema-drawer-stack > .image-schema-nested-drawer {
+    margin-bottom: 0.45rem;
+}
+
+.image-schema-drawer-stack > .image-schema-nested-drawer:last-child {
+    margin-bottom: 0;
 }
 
 .image-schema-nested-drawer,
