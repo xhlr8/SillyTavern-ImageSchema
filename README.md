@@ -93,7 +93,9 @@ All three modes support multiple complete occurrences. By default, matching text
 
 ### Provider profiles
 
-Provider profiles are managed by the companion same-origin plugin. The UI can add, duplicate, delete, save, select, set a default, and test OpenAI, Gemini SSE, and generic HTTP profiles. It edits endpoint URL, generic method, model and allowlist, timeout, and provider defaults. The ComfyUI area is layout preparation only; no adapter is implemented.
+Provider profiles are managed by the companion same-origin plugin. The compact UI can add, duplicate, delete, save, select, set a default, and test OpenAI, Gemini SSE, and generic HTTP profiles. It edits endpoint URL, generic method, model, timeout, and the write-only API key; model allowlists and raw defaults JSON live under **Provider advanced**. ComfyUI workflow support is planned but no adapter is implemented yet.
+
+For OpenAI-compatible providers, the URL field accepts either an API base URL or a complete generations endpoint. A base such as `https://host/openai-image` automatically resolves to `https://host/openai-image/v1/images/generations`; URLs already ending in `/v1/images/generations` are preserved. The effective endpoint is previewed before saving.
 
 API key values are write-only: the plugin config response should expose only an `apiKeyConfigured` boolean. Replacement and clearing use the secret route directly. Keys are never copied during duplication and are never placed in `extensionSettings`.
 

@@ -5,6 +5,8 @@ import {
     PROVIDER_ROUTE_PATHS,
     normalizeProviderConfig,
     normalizeProviderProfile,
+    displayProviderUrl,
+    resolveProviderUrl,
     parseAllowedModels,
     parseProviderDefaults,
     redactSensitiveValue,
@@ -64,6 +66,15 @@ test('allowed models and defaults parsing validate user input', () => {
     assert.deepEqual(parseProviderDefaults('{"size":"1024x1024"}'), { size: '1024x1024' });
     assert.throws(() => parseProviderDefaults('[]'), /JSON object/);
     assert.throws(() => parseProviderDefaults('{bad'), /valid JSON/);
+});
+
+test('OpenAI base URLs resolve to the generations endpoint without double-appending', () => {
+    assert.equal(resolveProviderUrl('openai', 'https://example.test/openai-image'), 'https://example.test/openai-image/v1/images/generations');
+    assert.equal(resolveProviderUrl('openai', 'https://example.test/openai-image/v1'), 'https://example.test/openai-image/v1/images/generations');
+    assert.equal(resolveProviderUrl('openai', 'https://example.test/openai-image/v1/images/generations'), 'https://example.test/openai-image/v1/images/generations');
+    assert.equal(displayProviderUrl('openai', 'https://example.test/openai-image/v1/images/generations'), 'https://example.test/openai-image');
+    assert.equal(resolveProviderUrl('generic', 'https://example.test/path/'), 'https://example.test/path');
+    assert.throws(() => resolveProviderUrl('openai', 'not a URL'), /valid HTTP/);
 });
 
 test('provider output redacts common secret fields recursively', () => {

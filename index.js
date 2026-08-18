@@ -13,6 +13,8 @@ import {
     normalizeGenericMethod,
     normalizeProviderConfig,
     normalizeProviderProfile,
+    displayProviderUrl,
+    resolveProviderUrl,
     parseAllowedModels,
     parseProviderDefaults,
     redactSensitiveValue,
@@ -388,7 +390,7 @@ function providerPayload() {
     const profile = {
         name,
         type,
-        url: value('image_schema_provider_url').trim(),
+        url: resolveProviderUrl(type, value('image_schema_provider_url')),
         model: value('image_schema_provider_model').trim(),
         allowedModels: parseAllowedModels(value('image_schema_provider_allowed_models')),
         timeoutMs,
@@ -403,6 +405,23 @@ function updateProviderPanels() {
     document.querySelectorAll('[data-image-schema-provider-panel]').forEach(panel => {
         panel.classList.toggle('displayNone', panel.getAttribute('data-image-schema-provider-panel') !== type);
     });
+    const label = document.getElementById('image_schema_provider_url_label');
+    const help = document.getElementById('image_schema_provider_url_help');
+    const preview = document.getElementById('image_schema_provider_url_preview');
+    if (label) label.textContent = type === 'openai' ? 'API base URL or generations endpoint' : 'Provider URL';
+    if (help) help.textContent = type === 'openai'
+        ? 'A base URL automatically uses /v1/images/generations. A complete generations endpoint is preserved.'
+        : type === 'gemini-sse' ? 'Enter the complete Gemini streamGenerateContent endpoint.' : 'Enter the complete generic request URL.';
+    if (preview) {
+        try {
+            const resolved = resolveProviderUrl(type, value('image_schema_provider_url'));
+            preview.textContent = resolved ? `Effective endpoint: ${resolved}` : '';
+            preview.dataset.state = 'ok';
+        } catch (error) {
+            preview.textContent = value('image_schema_provider_url') ? error.message : '';
+            preview.dataset.state = 'error';
+        }
+    }
 }
 
 function updateProviderSecretStatus(configured) {
@@ -417,7 +436,7 @@ function populateProviderEditor(profileInput) {
     providerOriginalName = profile.name;
     setValue('image_schema_provider_name', profile.name);
     setValue('image_schema_provider_type', profile.type);
-    setValue('image_schema_provider_url', profile.url);
+    setValue('image_schema_provider_url', displayProviderUrl(profile.type, profile.url));
     setValue('image_schema_provider_method', profile.method || 'POST');
     setValue('image_schema_provider_model', profile.model);
     setValue('image_schema_provider_allowed_models', profile.allowedModels.join('\n'));
@@ -732,6 +751,7 @@ async function addSettingsUi() {
     document.getElementById('image_schema_provider_duplicate')?.addEventListener('click', duplicateProvider);
     document.getElementById('image_schema_provider_delete')?.addEventListener('click', deleteProvider);
     document.getElementById('image_schema_provider_type')?.addEventListener('change', updateProviderPanels);
+    document.getElementById('image_schema_provider_url')?.addEventListener('input', updateProviderPanels);
     document.getElementById('image_schema_provider_save')?.addEventListener('click', saveProvider);
     document.getElementById('image_schema_provider_set_default')?.addEventListener('click', setDefaultProvider);
     document.getElementById('image_schema_provider_key_replace')?.addEventListener('click', replaceProviderSecret);
