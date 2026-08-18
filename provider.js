@@ -49,12 +49,16 @@ export function resolveProviderUrl(type, input, model = '') {
         return url.toString();
     }
     if (type === 'gemini-sse') {
-        if (/:streamGenerateContent$/i.test(pathname)) return url.toString();
+        if (/\/v1beta\/interactions$/i.test(pathname) || /:streamGenerateContent$/i.test(pathname)) return url.toString();
         const selectedModel = firstString(model);
         if (!selectedModel) throw new Error('Gemini model is required when using a base URL');
-        if (/\/v1beta$/i.test(pathname)) pathname += `/models/${encodeURIComponent(selectedModel)}:streamGenerateContent`;
-        else pathname += `/v1beta/models/${encodeURIComponent(selectedModel)}:streamGenerateContent`;
-        url.pathname = pathname.replace(/\/{2,}/g, '/');
+        if (/^gemini-3(?:\.|-|$)/i.test(selectedModel)) {
+            url.pathname = `${pathname}/v1beta/interactions`.replace(/\/{2,}/g, '/');
+        } else if (/\/v1beta$/i.test(pathname)) {
+            url.pathname = `${pathname}/models/${encodeURIComponent(selectedModel)}:streamGenerateContent`;
+        } else {
+            url.pathname = `${pathname}/v1beta/models/${encodeURIComponent(selectedModel)}:streamGenerateContent`.replace(/\/{2,}/g, '/');
+        }
         return url.toString();
     }
     return url.toString().replace(/\/$/, '');
@@ -66,7 +70,7 @@ export function displayProviderUrl(type, input) {
     try {
         const url = new URL(raw);
         if (type === 'openai') url.pathname = url.pathname.replace(/\/v1\/images\/generations\/?$/i, '') || '/';
-        else url.pathname = url.pathname.replace(/\/v1beta\/models\/[^/]+:streamGenerateContent\/?$/i, '') || '/';
+        else url.pathname = url.pathname.replace(/\/v1beta\/(?:models\/[^/]+:streamGenerateContent|interactions)\/?$/i, '') || '/';
         return url.toString().replace(/\/$/, '');
     } catch {
         return raw;

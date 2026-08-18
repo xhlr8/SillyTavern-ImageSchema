@@ -427,7 +427,7 @@ function updateProviderPanels() {
     if (label) label.textContent = type === 'openai' ? 'API base URL or generations endpoint' : type === 'gemini-sse' ? 'API base URL or stream endpoint' : 'Provider URL';
     if (help) help.textContent = type === 'openai'
         ? 'A base URL automatically uses /v1/images/generations. A complete generations endpoint is preserved.'
-        : type === 'gemini-sse' ? 'A base URL uses /v1beta/models/{model}:streamGenerateContent. A complete stream endpoint is preserved.' : 'Enter the complete generic request URL.';
+        : type === 'gemini-sse' ? 'Gemini 3 image models use /v1beta/interactions. Older image models use streamGenerateContent. Complete endpoints are preserved.' : 'Enter the complete generic request URL.';
     if (preview) {
         try {
             const resolved = resolveProviderUrl(type, value('image_schema_provider_url'), value('image_schema_provider_model'));
