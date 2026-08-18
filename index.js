@@ -176,13 +176,17 @@ function addImageControls(image, request, messageId, occurrence) {
         state.textContent = 'Generating image…';
         frame.append(state);
     }
-    image.addEventListener('load', () => {
-        image.classList.add('image-schema-loaded');
-        state.textContent = '';
-    }, { once: true });
-    image.addEventListener('error', () => {
-        if (!image.classList.contains('image-schema-failed')) state.textContent = 'Image generation failed. Check plugin status.';
-    }, { once: true });
+    if (image.dataset.imageSchemaListeners !== 'true') {
+        image.dataset.imageSchemaListeners = 'true';
+        image.addEventListener('load', () => {
+            image.classList.add('image-schema-loaded');
+            state.textContent = '';
+        });
+        image.addEventListener('error', () => {
+            image.classList.remove('image-schema-loaded');
+            if (!image.classList.contains('image-schema-failed')) state.textContent = 'Image generation failed. Check plugin status.';
+        });
+    }
     if (image.complete && image.naturalWidth > 0) {
         image.classList.add('image-schema-loaded');
         state.textContent = '';
@@ -201,21 +205,31 @@ function addImageControls(image, request, messageId, occurrence) {
         button.type = 'button';
         button.className = `menu_button ${className}`;
         button.title = title;
+        button.dataset.swipeIgnore = 'true';
         const icon = document.createElement('i');
         icon.className = `fa-solid ${iconName}`;
+        icon.dataset.swipeIgnore = 'true';
         button.append(icon);
         actions.append(button);
     }
     frame.append(actions);
 
-    actions.querySelector('.image-schema-copy').addEventListener('click', async () => {
+    actions.addEventListener('pointerdown', event => event.stopPropagation());
+    actions.addEventListener('touchstart', event => event.stopPropagation(), { passive: true });
+    actions.querySelector('.image-schema-copy').addEventListener('click', async event => {
+        event.preventDefault();
+        event.stopPropagation();
         await navigator.clipboard.writeText(request.text);
         notify('success', 'Image prompt copied.');
     });
-    actions.querySelector('.image-schema-inspect').addEventListener('click', () => {
+    actions.querySelector('.image-schema-inspect').addEventListener('click', event => {
+        event.preventDefault();
+        event.stopPropagation();
         window.alert(JSON.stringify(request, null, 2));
     });
-    actions.querySelector('.image-schema-regenerate').addEventListener('click', () => {
+    actions.querySelector('.image-schema-regenerate').addEventListener('click', event => {
+        event.preventDefault();
+        event.stopPropagation();
         const next = structuredClone(request);
         next.params.seed = Math.floor(Math.random() * 2147483647);
         image.classList.remove('image-schema-loaded');
@@ -228,12 +242,13 @@ function addImageControls(image, request, messageId, occurrence) {
 
 function rewriteImages(root, occurrences, messageId) {
     const virtualPrefix = settings.virtualPath;
+    const byKey = new Map(occurrences.filter(item => item.key).map(item => [item.key, item]));
     const candidates = Array.from(root.querySelectorAll('img'));
     let occurrenceNumber = 0;
     for (const image of candidates) {
         const rawSource = image.getAttribute('src') || '';
-        const projectedIndex = Number(image.getAttribute('data-image-schema-index'));
-        const projected = Number.isInteger(projectedIndex) ? occurrences[projectedIndex] : null;
+        const projectedKey = image.getAttribute('data-image-schema-key');
+        const projected = projectedKey ? byKey.get(projectedKey) : null;
         const belongsToSchema = rawSource.startsWith(virtualPrefix) || Boolean(projected);
         if (!belongsToSchema) continue;
 
@@ -259,6 +274,9 @@ function renderMessage(messageId) {
     if (!Number.isInteger(id) || id < 0) return;
     const message = context.chat?.[id];
     if (!message || message.is_user || message.is_system) return;
+    // During an overswipe ST creates a temporary slot and shows `...` before
+    // generation starts. Do not replace that placeholder with the prior swipe.
+    if (typeof message.swipe_id === 'number' && Array.isArray(message.swipes) && message.swipe_id >= message.swipes.length) return;
     const messageElement = getMessageElement(id);
     const textElement = messageElement?.querySelector('.mes_text');
     if (!textElement) return;
@@ -299,15 +317,14 @@ function queueRenderAll() {
 
 function onMutations(records) {
     if (!settings.enabled) return;
+    const messageIds = new Set();
     for (const record of records) {
-        const addedMessage = [...record.addedNodes].some(node =>
-            node.nodeType === Node.ELEMENT_NODE &&
-            (node.matches?.('.mes[mesid]') || node.querySelector?.('.mes[mesid]')),
-        );
-        if (!addedMessage) continue;
-        queueRenderAll();
-        return;
+        for (const node of record.addedNodes) {
+            if (node.nodeType !== Node.ELEMENT_NODE) continue;
+            if (node.matches?.('.mes[mesid]')) messageIds.add(node.getAttribute('mesid'));
+        }
     }
+    for (const messageId of messageIds) requestAnimationFrame(() => renderMessage(messageId));
 }
 
 function shouldInject(type, options, dryRun) {
@@ -788,7 +805,7 @@ export async function init() {
     const chat = document.getElementById('chat');
     if (chat) {
         observer = new MutationObserver(onMutations);
-        observer.observe(chat, { childList: true, subtree: true });
+        observer.observe(chat, { childList: true, subtree: false });
     }
     queueRenderAll();
     checkPluginStatus().catch(() => {});
