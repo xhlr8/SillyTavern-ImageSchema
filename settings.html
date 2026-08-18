@@ -1,0 +1,104 @@
+<div id="image_schema_settings" class="image-schema-settings">
+    <div class="inline-drawer">
+        <div class="inline-drawer-toggle inline-drawer-header">
+            <b>Image Schema</b>
+            <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+        </div>
+        <div class="inline-drawer-content">
+            <div class="image-schema-status-row">
+                <label class="checkbox_label" for="image_schema_enabled">
+                    <input id="image_schema_enabled" type="checkbox">
+                    <span>Render model image schemas</span>
+                </label>
+                <span id="image_schema_plugin_status" class="image-schema-status" data-state="checking">Not checked</span>
+                <button id="image_schema_check_plugin" type="button" class="menu_button">Check plugin</button>
+            </div>
+            <small>Virtual model URLs are rewritten in the browser to the authenticated same-origin server plugin. Server routes are never included in model instructions.</small>
+
+            <label for="image_schema_mode">Model-facing schema</label>
+            <select id="image_schema_mode" class="text_pole">
+                <option value="inline">Inline &lt;img src=&quot;/image/…&quot;&gt;</option>
+                <option value="delimiter">Delimited prompt</option>
+                <option value="json">JSON wrapper</option>
+            </select>
+
+            <div data-image-schema-panel="inline" class="image-schema-panel">
+                <label for="image_schema_virtual_path">Virtual base path</label>
+                <input id="image_schema_virtual_path" class="text_pole" type="text" spellcheck="false" placeholder="/image/">
+                <small>This is model-facing syntax only. It is not a server route.</small>
+            </div>
+
+            <div data-image-schema-panel="delimiter" class="image-schema-panel">
+                <div class="image-schema-grid two">
+                    <label>Opening delimiter<input id="image_schema_delimiter_open" class="text_pole" type="text" spellcheck="false"></label>
+                    <label>Closing delimiter<input id="image_schema_delimiter_close" class="text_pole" type="text" spellcheck="false"></label>
+                </div>
+                <small>Delimiter mode accepts prompt text only; all parameters come from defaults below.</small>
+            </div>
+
+            <div data-image-schema-panel="json" class="image-schema-panel">
+                <div class="image-schema-grid two">
+                    <label>Opening wrapper<input id="image_schema_json_open" class="text_pole" type="text" spellcheck="false"></label>
+                    <label>Closing wrapper<input id="image_schema_json_close" class="text_pole" type="text" spellcheck="false"></label>
+                    <label>Text property<input id="image_schema_json_text" class="text_pole" type="text" spellcheck="false"></label>
+                    <label>Params property<input id="image_schema_json_params" class="text_pole" type="text" spellcheck="false"></label>
+                </div>
+                <small>Strict JSON is required. Both configured properties must be present; params may be an empty object.</small>
+            </div>
+
+            <label class="checkbox_label" for="image_schema_ignore_code">
+                <input id="image_schema_ignore_code" type="checkbox">
+                <span>Ignore schemas inside Markdown code spans/fences</span>
+            </label>
+            <label for="image_schema_unknown_policy">Unknown model parameter policy</label>
+            <select id="image_schema_unknown_policy" class="text_pole">
+                <option value="reject">Reject with visible parse error</option>
+                <option value="ignore">Ignore unknown parameters</option>
+            </select>
+
+            <hr>
+            <h4>Defaults and allowed overrides</h4>
+            <small>Defaults apply before server profile defaults. Checked parameters may be supplied by the model in inline/JSON mode. Seed is the only image identity/randomness field; there is no separate ID. Gemini consumes aspect ratio, image size, temperature, and person generation; OpenAI and generic profiles use their supported subset.</small>
+            <div class="image-schema-params">
+                <div class="image-schema-param"><label>Backend/profile<input id="image_schema_default_backend" class="text_pole" type="text"></label><label class="checkbox_label"><input id="image_schema_allow_backend" type="checkbox"><span>Allow</span></label></div>
+                <div class="image-schema-param"><label>Model<input id="image_schema_default_model" class="text_pole" type="text"></label><label class="checkbox_label"><input id="image_schema_allow_model" type="checkbox"><span>Allow</span></label></div>
+                <div class="image-schema-param"><label>Seed<input id="image_schema_default_seed" class="text_pole" type="number" min="0" step="1"></label><label class="checkbox_label"><input id="image_schema_allow_seed" type="checkbox"><span>Allow</span></label></div>
+                <div class="image-schema-param"><label>Aspect ratio<input id="image_schema_default_aspect_ratio" class="text_pole" type="text" placeholder="3:4"></label><label class="checkbox_label"><input id="image_schema_allow_aspect_ratio" type="checkbox"><span>Allow</span></label></div>
+                <div class="image-schema-param"><label>Image size<input id="image_schema_default_image_size" class="text_pole" type="text" placeholder="1K"></label><label class="checkbox_label"><input id="image_schema_allow_image_size" type="checkbox"><span>Allow</span></label></div>
+                <div class="image-schema-param"><label>Output format<input id="image_schema_default_output_format" class="text_pole" type="text" placeholder="image/png"></label><label class="checkbox_label"><input id="image_schema_allow_output_format" type="checkbox"><span>Allow</span></label></div>
+                <div class="image-schema-param"><label>Temperature<input id="image_schema_default_temperature" class="text_pole" type="number" min="0" max="2" step="0.1"></label><label class="checkbox_label"><input id="image_schema_allow_temperature" type="checkbox"><span>Allow</span></label></div>
+                <div class="image-schema-param"><label>Person generation<input id="image_schema_default_person_generation" class="text_pole" type="text"></label><label class="checkbox_label"><input id="image_schema_allow_person_generation" type="checkbox"><span>Allow</span></label></div>
+                <div class="image-schema-param"><label>Width<input id="image_schema_default_width" class="text_pole" type="number" min="1" step="1"></label><label class="checkbox_label"><input id="image_schema_allow_width" type="checkbox"><span>Allow</span></label></div>
+                <div class="image-schema-param"><label>Height<input id="image_schema_default_height" class="text_pole" type="number" min="1" step="1"></label><label class="checkbox_label"><input id="image_schema_allow_height" type="checkbox"><span>Allow</span></label></div>
+                <div class="image-schema-param wide"><label>Negative prompt<input id="image_schema_default_negative" class="text_pole" type="text"></label><label class="checkbox_label"><input id="image_schema_allow_negative" type="checkbox"><span>Allow</span></label></div>
+            </div>
+
+            <hr>
+            <h4>Generation instruction</h4>
+            <label class="checkbox_label" for="image_schema_inject"><input id="image_schema_inject" type="checkbox"><span>Inject instruction ephemerally for normal generations</span></label>
+            <label class="checkbox_label" for="image_schema_inject_quiet"><input id="image_schema_inject_quiet" type="checkbox"><span>Also inject into quiet/automatic generations</span></label>
+            <label class="checkbox_label" for="image_schema_custom_enabled"><input id="image_schema_custom_enabled" type="checkbox"><span>Use custom instruction instead of generated instruction</span></label>
+            <textarea id="image_schema_custom_instruction" class="text_pole image-schema-textarea" rows="5" placeholder="Optional custom prompt instruction"></textarea>
+            <label>Live instruction preview</label>
+            <pre id="image_schema_instruction_preview" class="image-schema-output"></pre>
+            <button id="image_schema_copy_instruction" type="button" class="menu_button"><i class="fa-solid fa-copy"></i> Copy instruction</button>
+
+            <hr>
+            <h4>Parser test</h4>
+            <textarea id="image_schema_test_input" class="text_pole image-schema-textarea" rows="4" placeholder="Paste a complete model response here"></textarea>
+            <button id="image_schema_test_parser" type="button" class="menu_button">Parse sample</button>
+            <pre id="image_schema_test_output" class="image-schema-output"></pre>
+
+            <hr>
+            <h4>Plugin test and cache</h4>
+            <input id="image_schema_test_prompt" class="text_pole" type="text" placeholder="Test image prompt">
+            <button id="image_schema_test_generation" type="button" class="menu_button">Test generation</button>
+            <pre id="image_schema_generation_result" class="image-schema-output"></pre>
+            <div class="image-schema-button-row">
+                <button id="image_schema_refresh_cache" type="button" class="menu_button">Refresh cache stats</button>
+                <button id="image_schema_clear_cache" type="button" class="menu_button redWarningBG">Clear all cache</button>
+            </div>
+            <pre id="image_schema_cache_stats" class="image-schema-output">Not loaded.</pre>
+        </div>
+    </div>
+</div>

@@ -1,0 +1,10 @@
+{
+  "name": "sillytavern-image-schema-extension",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test --test-isolation=none parser.test.js test/parser.test.js",
+    "check": "node --check index.js && node --check parser.js"
+  }
+}
