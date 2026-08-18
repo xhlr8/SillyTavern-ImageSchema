@@ -166,7 +166,6 @@ export function buildProviderProfilePayload(input = {}) {
         timeoutMs,
     };
     if (type === 'comfyui') {
-        if (isPlainObject(input.defaults) && Object.keys(input.defaults).length) profile.defaults = structuredClone(input.defaults);
         profile.workflow = parseComfyWorkflow(input.workflow);
         const selected = normalizeComfyBindings(input.bindings);
         if (!selected.positivePrompt?.input) throw new Error('ComfyUI positive prompt binding is required');

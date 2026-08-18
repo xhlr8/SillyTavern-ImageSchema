@@ -546,13 +546,12 @@ async function analyzeComfyWorkflow() {
         const analysis = result?.analysis || result;
         comfyCandidates = mergeComfyCandidates(normalizeComfyCandidates(analysis), inferComfyWorkflowCandidates(comfyWorkflow));
         for (const key of COMFY_BINDING_KEYS) populateComfyBindingSelect(key);
-        const validation = analysis?.validation;
-        const valid = validation?.valid ?? analysis?.valid;
         const issues = [
+            ...(!comfyCandidates.positivePrompt.length ? ['No positive prompt binding candidate was found.'] : []),
             ...(analysis?.missingClassTypes?.length ? [`Missing node classes: ${analysis.missingClassTypes.join(', ')}`] : []),
             ...(analysis?.warnings || []),
         ];
-        const message = validation?.message || analysis?.message || (valid === false ? 'Analyzer reported workflow validation errors.' : 'Analysis complete. Review the selected bindings.');
+        const message = issues.length ? 'Analysis completed with issues.' : 'Analysis complete. Review the selected bindings.';
         updateComfyValidation(issues.length ? `${message} ${issues.join(' ')}` : message);
         setProviderResult({ message, nodeCount: analysis?.nodeCount ?? countComfyWorkflowNodes(comfyWorkflow), warnings: issues });
     } catch (error) {
@@ -582,6 +581,18 @@ function providerPayload() {
         defaults: parseProviderDefaults(value('image_schema_provider_defaults')),
         method: type === 'generic' ? normalizeGenericMethod(value('image_schema_provider_method')) : undefined,
     });
+}
+
+function changeProviderType() {
+    const type = value('image_schema_provider_type');
+    if (type === 'comfyui') {
+        comfyWorkflow = null;
+        comfyWorkflowName = '';
+        updateComfyWorkflowStatus();
+        resetComfyCandidates();
+        setProviderResult('Upload an API workflow for this ComfyUI profile.');
+    }
+    updateProviderPanels();
 }
 
 function updateProviderPanels() {
@@ -968,7 +979,7 @@ async function addSettingsUi() {
     document.getElementById('image_schema_provider_add')?.addEventListener('click', addProvider);
     document.getElementById('image_schema_provider_duplicate')?.addEventListener('click', duplicateProvider);
     document.getElementById('image_schema_provider_delete')?.addEventListener('click', deleteProvider);
-    document.getElementById('image_schema_provider_type')?.addEventListener('change', updateProviderPanels);
+    document.getElementById('image_schema_provider_type')?.addEventListener('change', changeProviderType);
     document.getElementById('image_schema_provider_url')?.addEventListener('input', updateProviderPanels);
     document.getElementById('image_schema_provider_model')?.addEventListener('input', updateProviderPanels);
     document.getElementById('image_schema_comfy_workflow_choose')?.addEventListener('click', () => document.getElementById('image_schema_comfy_workflow_file')?.click());
@@ -1015,10 +1026,9 @@ export async function clean() {
     if (context?.chat) {
         for (const message of context.chat) clearLegacyProjectionMetadata(message);
     }
-    if (context?.extensionSettings) {
-        delete context.extensionSettings[MODULE_NAME];
-        context.saveSettingsDebounced();
-    }
+    comfyWorkflow = null;
+    comfyWorkflowName = '';
+    comfyCandidates = Object.fromEntries(COMFY_BINDING_KEYS.map(key => [key, []]));
     initialized = false;
 }
 
