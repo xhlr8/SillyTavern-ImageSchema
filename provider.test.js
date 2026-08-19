@@ -9,6 +9,7 @@ import {
     normalizeComfyCandidates,
     normalizeProviderConfig,
     normalizeProviderProfile,
+    selectInstructionProviderProfile,
     resolveProviderUrl,
     displayProviderUrl,
     parseComfyWorkflow,
@@ -39,6 +40,7 @@ test('provider config accepts keyed profiles and secret status only', () => {
                 model: 'image-model',
                 allowedModels: ['image-model', 'image-model'],
                 timeout: 9000,
+                instructionPrompt: '  Prefer this profile for painterly scenes.  ',
                 hasApiKey: true,
             },
         },
@@ -52,6 +54,7 @@ test('provider config accepts keyed profiles and secret status only', () => {
         model: 'image-model',
         allowedModels: ['image-model'],
         timeoutMs: 9000,
+        instructionPrompt: 'Prefer this profile for painterly scenes.',
         defaults: {},
         apiKeyConfigured: true,
     });
@@ -62,8 +65,22 @@ test('generic profiles normalize method and safe defaults', () => {
     const profile = normalizeProviderProfile({ type: 'generic', method: 'post', allowedModels: 'one, two\none', defaults: { width: 512 } }, 'local');
     assert.equal(profile.name, 'local');
     assert.equal(profile.method, 'POST');
+    assert.equal(profile.instructionPrompt, '');
     assert.deepEqual(profile.allowedModels, ['one', 'two']);
     assert.deepEqual(profile.defaults, { width: 512 });
+});
+
+test('instruction profile selection honors a valid global backend then falls back to provider default', () => {
+    const config = {
+        defaultProfile: 'default-art',
+        profiles: [
+            { name: 'default-art', instructionPrompt: 'default guidance' },
+            { name: 'global-art', instructionPrompt: 'global guidance' },
+        ],
+    };
+    assert.equal(selectInstructionProviderProfile(config, 'global-art').instructionPrompt, 'global guidance');
+    assert.equal(selectInstructionProviderProfile(config, '').instructionPrompt, 'default guidance');
+    assert.equal(selectInstructionProviderProfile(config, 'missing').instructionPrompt, 'default guidance');
 });
 
 test('ComfyUI profile config round-trips workflow and maps persisted binding contract', () => {
@@ -130,7 +147,7 @@ test('ComfyUI save payload sends workflow and stable bindings without model fiel
     };
     const payload = buildProviderProfilePayload({
         name: 'local-comfy', type: 'comfyui', url: 'http://100.85.94.97:8188/', timeoutMs: 120000,
-        workflow, model: 'ignored', allowedModels: ['ignored'], defaults: {},
+        instructionPrompt: '  Keep the schema concise. ', workflow, model: 'ignored', allowedModels: ['ignored'], defaults: {},
         bindings: {
             positivePrompt: { node: '6', input: 'text', label: 'Prompt', confidence: 0.99, warning: 'not persisted' },
             seed: { node: '7', input: 'seed', path: '/7/inputs/seed' },
@@ -138,7 +155,8 @@ test('ComfyUI save payload sends workflow and stable bindings without model fiel
         },
     });
     assert.deepEqual(payload, {
-        name: 'local-comfy', type: 'comfyui', url: 'http://100.85.94.97:8188', timeoutMs: 120000, workflow,
+        name: 'local-comfy', type: 'comfyui', url: 'http://100.85.94.97:8188', timeoutMs: 120000,
+        instructionPrompt: 'Keep the schema concise.', workflow,
         bindings: { prompt: { node: '6', input: 'text' }, seed: { node: '7', input: 'seed' } },
         outputNode: '9',
     });

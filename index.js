@@ -27,6 +27,7 @@ import {
     parseComfyWorkflow,
     redactSensitiveValue,
     serializeProviderDefaults,
+    selectInstructionProviderProfile,
 } from './provider.js';
 
 const MODULE_NAME = 'imageSchema';
@@ -359,10 +360,18 @@ function disarmPrompt() {
     promptIsArmed = false;
 }
 
+function activeInstructionPrompt() {
+    return selectInstructionProviderProfile(providerConfig, settings.defaults.backend)?.instructionPrompt || '';
+}
+
+function currentInstruction() {
+    return buildInstruction(settings, activeInstructionPrompt());
+}
+
 function onGenerationAfterCommands(type, options, dryRun) {
     disarmPrompt();
     if (!shouldInject(type, options, dryRun)) return;
-    context.setExtensionPrompt(PROMPT_KEY, buildInstruction(settings), 1, 0, false, 0);
+    context.setExtensionPrompt(PROMPT_KEY, currentInstruction(), 1, 0, false, 0);
     promptIsArmed = true;
 }
 
@@ -571,6 +580,7 @@ function providerPayload() {
         type,
         url: value('image_schema_provider_url'),
         timeoutMs: Number(value('image_schema_provider_timeout')),
+        instructionPrompt: value('image_schema_provider_instruction'),
     };
     if (type === 'comfyui') return buildProviderProfilePayload({
         ...common,
@@ -645,6 +655,7 @@ function populateProviderEditor(profileInput) {
     setValue('image_schema_provider_model', profile.model);
     setValue('image_schema_provider_allowed_models', profile.allowedModels.join('\n'));
     setValue('image_schema_provider_timeout', profile.timeoutMs);
+    setValue('image_schema_provider_instruction', profile.instructionPrompt);
     setValue('image_schema_provider_defaults', serializeProviderDefaults(profile.defaults));
     setValue('image_schema_provider_key', '');
     setChecked('image_schema_provider_make_default', profile.name !== '' && profile.name === providerConfig.defaultProfile);
@@ -687,6 +698,7 @@ async function refreshProviders(selectedName = '') {
     try {
         providerConfig = normalizeProviderConfig(await pluginFetch(ROUTES.providerConfig));
         renderProviderSelector(selectedName);
+        refreshInstructionPreview();
         setProviderResult(`${providerConfig.profiles.length} provider profile(s) loaded.`);
         return providerConfig;
     } catch (error) {
@@ -807,7 +819,7 @@ async function testProvider() {
 
 function refreshInstructionPreview() {
     const output = document.getElementById('image_schema_instruction_preview');
-    if (output) output.textContent = buildInstruction(settings);
+    if (output) output.textContent = currentInstruction();
     document.querySelectorAll('[data-image-schema-panel]').forEach(panel => {
         panel.classList.toggle('displayNone', panel.getAttribute('data-image-schema-panel') !== settings.schema);
     });
@@ -863,7 +875,7 @@ function populateSettingsForm() {
 }
 
 async function copyInstruction() {
-    await navigator.clipboard.writeText(buildInstruction(settings));
+    await navigator.clipboard.writeText(currentInstruction());
     notify('success', 'Instruction copied.');
 }
 

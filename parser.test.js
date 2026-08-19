@@ -117,6 +117,17 @@ test('custom instruction is used exactly', () => {
     assert.equal(buildInstruction(settings({ useCustomInstruction: true, customInstruction: 'CUSTOM' })), 'CUSTOM');
 });
 
+test('per-profile instruction appends to generated schema instruction with clear delimiters', () => {
+    const instruction = buildInstruction(settings(), '  Use one image schema only.  ');
+    assert.match(instruction, /literal & separators/);
+    assert.match(instruction, /--- Per-profile image-schema instruction ---\nUse one image schema only\.\n--- End per-profile image-schema instruction ---$/);
+});
+
+test('per-profile instruction appends after a custom global instruction', () => {
+    const instruction = buildInstruction(settings({ useCustomInstruction: true, customInstruction: 'CUSTOM' }), 'PROFILE');
+    assert.equal(instruction, 'CUSTOM\n\n--- Per-profile image-schema instruction ---\nPROFILE\n--- End per-profile image-schema instruction ---');
+});
+
 test('plugin URL is hidden and maps normalized names to plugin contract', () => {
     const url = pluginImageUrl({
         text: 'a/b & c',

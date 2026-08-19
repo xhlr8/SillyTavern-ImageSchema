@@ -177,8 +177,8 @@ Requests use same-origin credentials and SillyTavern's request headers. Image UR
 
 Provider route payload contract used by the extension:
 
-- Config response: `{ profiles: Profile[] | Record<string, Profile>, defaultProfile }`; each profile may report `apiKeyConfigured` but must not return the key.
-- Save: `{ profile, previousName? }`, where `profile` contains `name`, `type`, `url`, `model`, `allowedModels`, `timeoutMs`, `defaults`, and `method` for generic HTTP. Profile types are `openai`, `gemini-sse`, and `generic`.
+- Config response: `{ profiles: Profile[] | Record<string, Profile>, defaultProfile }`; each profile may report `apiKeyConfigured` but must not return the key. Profiles may include `instructionPrompt`, a server-stored per-profile addition to the LLM image-schema instruction.
+- Save: `{ profile, previousName? }`, where `profile` contains `name`, `type`, `url`, `model`, `allowedModels`, `timeoutMs`, `defaults`, `instructionPrompt`, and `method` for generic HTTP. `instructionPrompt` is never stored in `extensionSettings` and never alters the generated image prompt. Profile types are `openai`, `gemini-sse`, `generic`, and `comfyui`.
 - Delete/default: `{ name }`.
 - Secret replace: `{ name, apiKey }`; secret clear: `{ name, clear: true }`.
 - Test: `{ profile }`, using the currently edited non-secret fields and the server-stored secret for that profile.

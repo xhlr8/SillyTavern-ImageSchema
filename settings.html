@@ -72,6 +72,12 @@
                             <div id="image_schema_comfy_validation" class="image-schema-operation-result" aria-live="polite">Load and analyze an API workflow to configure bindings.</div>
                         </div>
 
+                        <section id="image_schema_provider_instruction_section" class="image-schema-provider-instruction" aria-labelledby="image_schema_provider_instruction_title">
+                            <div id="image_schema_provider_instruction_title" class="image-schema-provider-section-title">Per-profile instruction</div>
+                            <label for="image_schema_provider_instruction">Image-schema instruction<textarea id="image_schema_provider_instruction" class="text_pole image-schema-textarea" rows="4" placeholder="Optional guidance for how the LLM should use this profile's image schema"></textarea></label>
+                            <small>Appended only to the model-facing image-schema instruction when this profile is selected by the global backend default, or is the provider default. This does not change the generated image prompt.</small>
+                        </section>
+
                         <details id="image_schema_provider_advanced" class="image-schema-subsection">
                             <summary>Provider advanced</summary>
                             <div class="image-schema-subsection-body">
@@ -92,39 +98,44 @@
                 </div>
             </details>
 
-            <details class="image-schema-section">
-                <summary>Image Defaults &amp; Model Overrides</summary>
+            <details class="image-schema-section image-schema-global-options">
+                <summary>Global Options</summary>
                 <div class="image-schema-section-body">
-                    <small>Set trusted defaults here. “Allow” lets model output override that value in inline or JSON mode.</small>
-                    <div class="image-schema-params">
-                        <div class="image-schema-param"><label>Backend/profile<input id="image_schema_default_backend" class="text_pole" type="text"></label><label class="checkbox_label"><input id="image_schema_allow_backend" type="checkbox"><span>Allow</span></label></div>
-                        <div class="image-schema-param"><label>Model<input id="image_schema_default_model" class="text_pole" type="text"></label><label class="checkbox_label"><input id="image_schema_allow_model" type="checkbox"><span>Allow</span></label></div>
-                        <div class="image-schema-param"><label>Seed<input id="image_schema_default_seed" class="text_pole" type="number" min="0" step="1"></label><label class="checkbox_label"><input id="image_schema_allow_seed" type="checkbox"><span>Allow</span></label></div>
-                        <div class="image-schema-param"><label>Aspect ratio<input id="image_schema_default_aspect_ratio" class="text_pole" type="text" placeholder="3:4"></label><label class="checkbox_label"><input id="image_schema_allow_aspect_ratio" type="checkbox"><span>Allow</span></label></div>
-                        <div class="image-schema-param"><label>Image size<input id="image_schema_default_image_size" class="text_pole" type="text" placeholder="1K"></label><label class="checkbox_label"><input id="image_schema_allow_image_size" type="checkbox"><span>Allow</span></label></div>
-                        <div class="image-schema-param"><label>Output format<input id="image_schema_default_output_format" class="text_pole" type="text" placeholder="image/png"></label><label class="checkbox_label"><input id="image_schema_allow_output_format" type="checkbox"><span>Allow</span></label></div>
-                        <div class="image-schema-param"><label>Temperature<input id="image_schema_default_temperature" class="text_pole" type="number" min="0" max="2" step="0.1"></label><label class="checkbox_label"><input id="image_schema_allow_temperature" type="checkbox"><span>Allow</span></label></div>
-                        <div class="image-schema-param"><label>Person generation<input id="image_schema_default_person_generation" class="text_pole" type="text"></label><label class="checkbox_label"><input id="image_schema_allow_person_generation" type="checkbox"><span>Allow</span></label></div>
-                        <div class="image-schema-param"><label>Width<input id="image_schema_default_width" class="text_pole" type="number" min="1" step="1"></label><label class="checkbox_label"><input id="image_schema_allow_width" type="checkbox"><span>Allow</span></label></div>
-                        <div class="image-schema-param"><label>Height<input id="image_schema_default_height" class="text_pole" type="number" min="1" step="1"></label><label class="checkbox_label"><input id="image_schema_allow_height" type="checkbox"><span>Allow</span></label></div>
-                        <div class="image-schema-param wide"><label>Negative prompt<input id="image_schema_default_negative" class="text_pole" type="text"></label><label class="checkbox_label"><input id="image_schema_allow_negative" type="checkbox"><span>Allow</span></label></div>
-                    </div>
-                </div>
-            </details>
+                    <details class="image-schema-subsection image-schema-light-details">
+                        <summary>Global Schema &amp; Prompt</summary>
+                        <div class="image-schema-subsection-body">
+                            <label for="image_schema_mode">Model-facing schema<select id="image_schema_mode" class="text_pole"><option value="inline">Inline &lt;img src=&quot;/image/…&quot;&gt;</option><option value="delimiter">Delimited prompt</option><option value="json">JSON wrapper</option></select></label>
+                            <div data-image-schema-panel="inline" class="image-schema-panel"><label for="image_schema_virtual_path">Virtual base path<input id="image_schema_virtual_path" class="text_pole" type="text" spellcheck="false" placeholder="/image/"></label></div>
+                            <div data-image-schema-panel="delimiter" class="image-schema-panel"><div class="image-schema-grid two"><label>Opening delimiter<input id="image_schema_delimiter_open" class="text_pole" type="text" spellcheck="false"></label><label>Closing delimiter<input id="image_schema_delimiter_close" class="text_pole" type="text" spellcheck="false"></label></div></div>
+                            <div data-image-schema-panel="json" class="image-schema-panel"><div class="image-schema-grid two"><label>Opening wrapper<input id="image_schema_json_open" class="text_pole" type="text" spellcheck="false"></label><label>Closing wrapper<input id="image_schema_json_close" class="text_pole" type="text" spellcheck="false"></label><label>Text property<input id="image_schema_json_text" class="text_pole" type="text" spellcheck="false"></label><label>Params property<input id="image_schema_json_params" class="text_pole" type="text" spellcheck="false"></label></div></div>
+                            <hr>
+                            <label class="checkbox_label" for="image_schema_inject"><input id="image_schema_inject" type="checkbox"><span>Inject schema instruction into normal generations</span></label>
+                            <label class="checkbox_label" for="image_schema_inject_quiet"><input id="image_schema_inject_quiet" type="checkbox"><span>Also inject into quiet/automatic generations</span></label>
+                            <label class="checkbox_label" for="image_schema_custom_enabled"><input id="image_schema_custom_enabled" type="checkbox"><span>Use a custom instruction</span></label>
+                            <textarea id="image_schema_custom_instruction" class="text_pole image-schema-textarea" rows="4" placeholder="Optional custom instruction"></textarea>
+                            <details class="image-schema-subsection"><summary>Instruction preview</summary><div class="image-schema-subsection-body"><pre id="image_schema_instruction_preview" class="image-schema-output"></pre><button id="image_schema_copy_instruction" type="button" class="menu_button"><i class="fa-solid fa-copy"></i> Copy</button></div></details>
+                        </div>
+                    </details>
 
-            <details class="image-schema-section">
-                <summary>Schema &amp; Prompt</summary>
-                <div class="image-schema-section-body">
-                    <label for="image_schema_mode">Model-facing schema<select id="image_schema_mode" class="text_pole"><option value="inline">Inline &lt;img src=&quot;/image/…&quot;&gt;</option><option value="delimiter">Delimited prompt</option><option value="json">JSON wrapper</option></select></label>
-                    <div data-image-schema-panel="inline" class="image-schema-panel"><label for="image_schema_virtual_path">Virtual base path<input id="image_schema_virtual_path" class="text_pole" type="text" spellcheck="false" placeholder="/image/"></label></div>
-                    <div data-image-schema-panel="delimiter" class="image-schema-panel"><div class="image-schema-grid two"><label>Opening delimiter<input id="image_schema_delimiter_open" class="text_pole" type="text" spellcheck="false"></label><label>Closing delimiter<input id="image_schema_delimiter_close" class="text_pole" type="text" spellcheck="false"></label></div></div>
-                    <div data-image-schema-panel="json" class="image-schema-panel"><div class="image-schema-grid two"><label>Opening wrapper<input id="image_schema_json_open" class="text_pole" type="text" spellcheck="false"></label><label>Closing wrapper<input id="image_schema_json_close" class="text_pole" type="text" spellcheck="false"></label><label>Text property<input id="image_schema_json_text" class="text_pole" type="text" spellcheck="false"></label><label>Params property<input id="image_schema_json_params" class="text_pole" type="text" spellcheck="false"></label></div></div>
-                    <hr>
-                    <label class="checkbox_label" for="image_schema_inject"><input id="image_schema_inject" type="checkbox"><span>Inject schema instruction into normal generations</span></label>
-                    <label class="checkbox_label" for="image_schema_inject_quiet"><input id="image_schema_inject_quiet" type="checkbox"><span>Also inject into quiet/automatic generations</span></label>
-                    <label class="checkbox_label" for="image_schema_custom_enabled"><input id="image_schema_custom_enabled" type="checkbox"><span>Use a custom instruction</span></label>
-                    <textarea id="image_schema_custom_instruction" class="text_pole image-schema-textarea" rows="4" placeholder="Optional custom instruction"></textarea>
-                    <details class="image-schema-subsection"><summary>Instruction preview</summary><div class="image-schema-subsection-body"><pre id="image_schema_instruction_preview" class="image-schema-output"></pre><button id="image_schema_copy_instruction" type="button" class="menu_button"><i class="fa-solid fa-copy"></i> Copy</button></div></details>
+                    <details class="image-schema-subsection image-schema-light-details">
+                        <summary>Image Defaults &amp; Model Overrides</summary>
+                        <div class="image-schema-subsection-body">
+                            <small>Set trusted defaults here. “Allow” lets model output override that value in inline or JSON mode.</small>
+                            <div class="image-schema-params">
+                                <div class="image-schema-param"><label>Backend/profile<input id="image_schema_default_backend" class="text_pole" type="text"></label><label class="checkbox_label"><input id="image_schema_allow_backend" type="checkbox"><span>Allow</span></label></div>
+                                <div class="image-schema-param"><label>Model<input id="image_schema_default_model" class="text_pole" type="text"></label><label class="checkbox_label"><input id="image_schema_allow_model" type="checkbox"><span>Allow</span></label></div>
+                                <div class="image-schema-param"><label>Seed<input id="image_schema_default_seed" class="text_pole" type="number" min="0" step="1"></label><label class="checkbox_label"><input id="image_schema_allow_seed" type="checkbox"><span>Allow</span></label></div>
+                                <div class="image-schema-param"><label>Aspect ratio<input id="image_schema_default_aspect_ratio" class="text_pole" type="text" placeholder="3:4"></label><label class="checkbox_label"><input id="image_schema_allow_aspect_ratio" type="checkbox"><span>Allow</span></label></div>
+                                <div class="image-schema-param"><label>Image size<input id="image_schema_default_image_size" class="text_pole" type="text" placeholder="1K"></label><label class="checkbox_label"><input id="image_schema_allow_image_size" type="checkbox"><span>Allow</span></label></div>
+                                <div class="image-schema-param"><label>Output format<input id="image_schema_default_output_format" class="text_pole" type="text" placeholder="image/png"></label><label class="checkbox_label"><input id="image_schema_allow_output_format" type="checkbox"><span>Allow</span></label></div>
+                                <div class="image-schema-param"><label>Temperature<input id="image_schema_default_temperature" class="text_pole" type="number" min="0" max="2" step="0.1"></label><label class="checkbox_label"><input id="image_schema_allow_temperature" type="checkbox"><span>Allow</span></label></div>
+                                <div class="image-schema-param"><label>Person generation<input id="image_schema_default_person_generation" class="text_pole" type="text"></label><label class="checkbox_label"><input id="image_schema_allow_person_generation" type="checkbox"><span>Allow</span></label></div>
+                                <div class="image-schema-param"><label>Width<input id="image_schema_default_width" class="text_pole" type="number" min="1" step="1"></label><label class="checkbox_label"><input id="image_schema_allow_width" type="checkbox"><span>Allow</span></label></div>
+                                <div class="image-schema-param"><label>Height<input id="image_schema_default_height" class="text_pole" type="number" min="1" step="1"></label><label class="checkbox_label"><input id="image_schema_allow_height" type="checkbox"><span>Allow</span></label></div>
+                                <div class="image-schema-param wide"><label>Negative prompt<input id="image_schema_default_negative" class="text_pole" type="text"></label><label class="checkbox_label"><input id="image_schema_allow_negative" type="checkbox"><span>Allow</span></label></div>
+                            </div>
+                        </div>
+                    </details>
                 </div>
             </details>
 

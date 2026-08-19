@@ -78,6 +78,39 @@
     padding: 0.15rem 0.55rem 0.6rem;
 }
 
+.image-schema-light-details {
+    margin: 0.35rem 0;
+    border-color: color-mix(in srgb, var(--SmartThemeBorderColor) 48%, transparent);
+    background: color-mix(in srgb, var(--SmartThemeBlurTintColor) 26%, transparent);
+}
+
+.image-schema-light-details > summary {
+    font-weight: 550;
+}
+
+.image-schema-provider-instruction {
+    margin-top: 0.75rem;
+    padding: 0.6rem;
+    border: 1px solid color-mix(in srgb, var(--SmartThemeBorderColor) 70%, transparent);
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--SmartThemeBlurTintColor) 32%, transparent);
+}
+
+.image-schema-provider-section-title {
+    font-weight: 600;
+    color: var(--SmartThemeQuoteColor);
+}
+
+.image-schema-provider-instruction > label {
+    margin-top: 0.4rem !important;
+}
+
+.image-schema-provider-instruction > small {
+    display: block;
+    margin-top: 0.3rem;
+    color: var(--SmartThemeQuoteColor);
+}
+
 .image-schema-settings label:not(.checkbox_label) {
     display: flex;
     flex-direction: column;

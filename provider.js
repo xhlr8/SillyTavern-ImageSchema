@@ -164,6 +164,7 @@ export function buildProviderProfilePayload(input = {}) {
         type,
         url: resolveProviderUrl(type, input.url, input.model),
         timeoutMs,
+        instructionPrompt: firstString(input.instructionPrompt),
     };
     if (type === 'comfyui') {
         profile.workflow = parseComfyWorkflow(input.workflow);
@@ -258,6 +259,7 @@ export function normalizeProviderProfile(input = {}, fallbackName = '') {
         model: type === 'comfyui' ? '' : firstString(source.model),
         allowedModels: type === 'comfyui' ? [] : normalizeAllowedModels(source.allowedModels),
         timeoutMs: Number.isSafeInteger(timeoutValue) && timeoutValue > 0 ? timeoutValue : DEFAULT_TIMEOUT_MS,
+        instructionPrompt: firstString(source.instructionPrompt),
         defaults: isPlainObject(source.defaults) ? structuredClone(source.defaults) : {},
         apiKeyConfigured: type === 'comfyui' ? false : Boolean(source.apiKeyConfigured ?? source.hasApiKey ?? source.hasSecret ?? source.secretConfigured),
     };
@@ -280,6 +282,12 @@ export function normalizeProviderConfig(input = {}) {
     const namedProfiles = profiles.filter(profile => profile.name);
     const defaultProfile = firstString(source.defaultProfile, source.default, source.defaultProvider);
     return { profiles: namedProfiles, defaultProfile };
+}
+
+export function selectInstructionProviderProfile(configInput = {}, backendDefault = '') {
+    const config = normalizeProviderConfig(configInput);
+    const backendProfile = config.profiles.find(profile => profile.name === firstString(backendDefault));
+    return backendProfile || config.profiles.find(profile => profile.name === config.defaultProfile) || null;
 }
 
 export function parseAllowedModels(value) {
