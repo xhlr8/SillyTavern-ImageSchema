@@ -152,7 +152,7 @@ A custom instruction is not validated against the parser settings. If it teaches
 Each rewritten image receives:
 
 - **Click/tap image**: opens SillyTavern's responsive popup with a contained large image, prompt, effective request, and copy/inspect/fresh-seed/close controls.
-- **Chevron**: hides or shows that image's compact action row for the current rendered frame.
+- **Show inline image controls** (global setting): when enabled, creates Copy / Inspect / Regenerate controls under generated images. When disabled, no inline control elements are created; only the clickable image remains.
 - **Copy**: copies the image prompt, not the full parameter object.
 - **Inspect**: displays the normalized extension request in a SillyTavern popup.
 - **Dice/regenerate**: assigns a random non-negative integer seed and changes the URL. This creates a new cache key; it does not remove the previous image. Regeneration from the popup updates both the popup and its source image.

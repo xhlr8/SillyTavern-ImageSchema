@@ -368,40 +368,21 @@
     overflow-wrap: anywhere;
 }
 
-.image-schema-action-bar,
 .image-schema-actions {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
     gap: 0.25rem;
-}
-
-.image-schema-action-bar {
     max-width: 100%;
     margin-top: 0.2rem;
 }
 
-.image-schema-actions {
-    margin: 0;
-}
-
-.image-schema-actions.image-schema-actions-hidden {
-    display: none;
-}
-
-.image-schema-action-bar .menu_button {
+.image-schema-actions .menu_button {
     box-sizing: border-box;
     min-width: 2rem;
     min-height: 2rem;
     padding: 0.25rem 0.45rem;
     touch-action: manipulation;
-}
-
-.image-schema-action-bar .image-schema-compact-control {
-    min-width: 1.75rem;
-    min-height: 1.75rem;
-    padding: 0.18rem 0.38rem;
-    opacity: 0.82;
 }
 
 .image-schema-lightbox-dialog {
@@ -437,6 +418,12 @@
     height: calc(min(94dvh, 94vh) - 3.5rem);
     max-height: calc(min(94dvh, 94vh) - 3.5rem);
     overflow: hidden;
+    padding: clamp(0.65rem, 1.5vw, 1rem);
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 12px;
+    background: var(--SmartThemeBlurTintColor, #11131d);
+    box-shadow: 0 12px 36px rgb(0 0 0 / 45%);
+    color: var(--SmartThemeBodyColor);
     text-align: left;
     touch-action: manipulation;
 }
@@ -549,14 +536,9 @@
         grid-column: auto;
     }
 
-    .image-schema-action-bar .menu_button {
+    .image-schema-actions .menu_button {
         min-width: 2.35rem;
         min-height: 2.35rem;
-    }
-
-    .image-schema-action-bar .image-schema-compact-control {
-        min-width: 2.1rem;
-        min-height: 2.1rem;
     }
 
     .image-schema-lightbox-dialog {

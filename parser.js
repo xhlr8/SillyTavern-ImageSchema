@@ -30,6 +30,7 @@ export const PLUGIN_SUPPORTED_PARAMS = PARAM_ORDER;
 
 export const DEFAULT_SETTINGS = Object.freeze({
     enabled: true,
+    showInlineControls: true,
     schema: 'inline',
     virtualPath: '/image/',
     jsonOpen: '<image>',

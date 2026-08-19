@@ -437,12 +437,15 @@ function addImageControls(image, request, messageId, occurrence) {
         state.textContent = '';
     }
 
-    if (frame.querySelector('.image-schema-action-bar')) return;
-    const actionBar = document.createElement('span');
-    actionBar.className = 'image-schema-action-bar';
-    actionBar.dataset.swipeIgnore = 'true';
-    const toggle = makeImageButton('image-schema-actions-toggle', 'Hide image actions', 'fa-chevron-down', { compact: true });
-    toggle.setAttribute('aria-expanded', 'true');
+    const existingActions = frame.querySelector('.image-schema-actions');
+    if (!settings.showInlineControls) {
+        existingActions?.remove();
+        frame.querySelector('.image-schema-action-bar')?.remove();
+        return;
+    }
+    if (existingActions) return;
+    // Only the three requested buttons are created. When the global setting is
+    // off, no inline action wrapper or hidden controls exist in the DOM.
     const actions = document.createElement('span');
     actions.className = 'image-schema-actions';
     actions.dataset.swipeIgnore = 'true';
@@ -452,21 +455,11 @@ function addImageControls(image, request, messageId, occurrence) {
         ['image-schema-regenerate', 'Regenerate with a fresh seed', 'fa-dice'],
     ];
     for (const [className, title, iconName] of controls) actions.append(makeImageButton(className, title, iconName));
-    actionBar.append(toggle, actions);
-    frame.append(actionBar);
+    frame.append(actions);
 
-    actionBar.addEventListener('pointerdown', stopImageInteraction);
-    actionBar.addEventListener('touchstart', stopImageInteraction, { passive: true });
-    actionBar.addEventListener('click', stopImageInteraction);
-    toggle.addEventListener('click', event => {
-        event.preventDefault();
-        const isHidden = actions.classList.toggle('image-schema-actions-hidden');
-        toggle.setAttribute('aria-expanded', String(!isHidden));
-        toggle.setAttribute('aria-label', isHidden ? 'Show image actions' : 'Hide image actions');
-        toggle.title = isHidden ? 'Show image actions' : 'Hide image actions';
-        toggle.querySelector('i')?.classList.toggle('fa-chevron-down', !isHidden);
-        toggle.querySelector('i')?.classList.toggle('fa-chevron-right', isHidden);
-    });
+    actions.addEventListener('pointerdown', stopImageInteraction);
+    actions.addEventListener('touchstart', stopImageInteraction, { passive: true });
+    actions.addEventListener('click', stopImageInteraction);
     actions.querySelector('.image-schema-copy').addEventListener('click', event => {
         event.preventDefault();
         void copyImagePrompt(image);
@@ -1053,6 +1046,7 @@ function refreshInstructionPreview() {
 
 function readSettingsForm() {
     settings.enabled = checked('image_schema_enabled');
+    settings.showInlineControls = checked('image_schema_show_inline_controls');
     settings.schema = value('image_schema_mode');
     settings.virtualPath = value('image_schema_virtual_path');
     settings.jsonOpen = value('image_schema_json_open');
@@ -1079,6 +1073,7 @@ function readSettingsForm() {
 
 function populateSettingsForm() {
     setChecked('image_schema_enabled', settings.enabled);
+    setChecked('image_schema_show_inline_controls', settings.showInlineControls);
     setValue('image_schema_mode', settings.schema);
     setValue('image_schema_virtual_path', settings.virtualPath);
     setValue('image_schema_json_open', settings.jsonOpen);
