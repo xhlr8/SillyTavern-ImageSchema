@@ -146,7 +146,7 @@ test('ComfyUI save payload sends workflow and stable bindings without model fiel
         9: { class_type: 'SaveImage', inputs: { images: ['8', 0] } },
     };
     const payload = buildProviderProfilePayload({
-        name: 'local-comfy', type: 'comfyui', url: 'http://100.85.94.97:8188/', timeoutMs: 120000,
+        name: 'local-comfy', type: 'comfyui', url: 'http://192.0.2.10:8188/', timeoutMs: 120000,
         instructionPrompt: '  Keep the schema concise. ', workflow, model: 'ignored', allowedModels: ['ignored'], defaults: {},
         bindings: {
             positivePrompt: { node: '6', input: 'text', label: 'Prompt', confidence: 0.99, warning: 'not persisted' },
@@ -155,20 +155,20 @@ test('ComfyUI save payload sends workflow and stable bindings without model fiel
         },
     });
     assert.deepEqual(payload, {
-        name: 'local-comfy', type: 'comfyui', url: 'http://100.85.94.97:8188', timeoutMs: 120000,
+        name: 'local-comfy', type: 'comfyui', url: 'http://192.0.2.10:8188', timeoutMs: 120000,
         instructionPrompt: 'Keep the schema concise.', workflow,
         bindings: { prompt: { node: '6', input: 'text' }, seed: { node: '7', input: 'seed' } },
         outputNode: '9',
     });
     assert.equal(Object.hasOwn(payload, 'model'), false);
     assert.equal(Object.hasOwn(payload, 'allowedModels'), false);
-    assert.throws(() => buildProviderProfilePayload({ name: 'bad', type: 'comfyui', url: 'http://100.85.94.97:8188', timeoutMs: 1000, workflow, bindings: {} }), /positive prompt binding/);
+    assert.throws(() => buildProviderProfilePayload({ name: 'bad', type: 'comfyui', url: 'http://192.0.2.10:8188', timeoutMs: 1000, workflow, bindings: {} }), /positive prompt binding/);
     assert.throws(() => buildProviderProfilePayload({
-        name: 'stale', type: 'comfyui', url: 'http://100.85.94.97:8188', timeoutMs: 1000, workflow,
+        name: 'stale', type: 'comfyui', url: 'http://192.0.2.10:8188', timeoutMs: 1000, workflow,
         bindings: { positivePrompt: { node: '404', input: 'text' } },
     }), /node 404 does not exist/);
     assert.throws(() => buildProviderProfilePayload({
-        name: 'stale', type: 'comfyui', url: 'http://100.85.94.97:8188', timeoutMs: 1000, workflow,
+        name: 'stale', type: 'comfyui', url: 'http://192.0.2.10:8188', timeoutMs: 1000, workflow,
         bindings: { positivePrompt: { node: '6', input: 'missing' } },
     }), /input missing does not exist/);
 });
