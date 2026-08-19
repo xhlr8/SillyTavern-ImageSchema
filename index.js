@@ -284,10 +284,20 @@ function openImageLightbox(reference) {
     root.dataset.swipeIgnore = 'true';
 
     const largeImage = document.createElement('img');
-    largeImage.className = 'image-schema-lightbox-image';
+    largeImage.className = 'img_enlarged image-schema-lightbox-image';
     largeImage.src = image.currentSrc || image.src;
     largeImage.alt = image.alt || request.text;
     largeImage.dataset.swipeIgnore = 'true';
+    const imageHolder = document.createElement('div');
+    imageHolder.className = 'img_enlarged_holder image-schema-lightbox-holder';
+    imageHolder.append(largeImage);
+    const imageContainer = document.createElement('div');
+    imageContainer.className = 'img_enlarged_container image-schema-lightbox-media';
+    imageContainer.append(imageHolder);
+    largeImage.addEventListener('click', event => {
+        largeImage.classList.toggle('zoomed', !largeImage.classList.contains('zoomed'));
+        event.stopPropagation();
+    });
 
     const details = document.createElement('div');
     details.className = 'image-schema-lightbox-details';
@@ -324,7 +334,7 @@ function openImageLightbox(reference) {
         button.append(text);
         controls.append(button);
     }
-    root.append(largeImage, details, controls);
+    root.append(imageContainer, details, controls);
 
     root.addEventListener('pointerdown', stopImageInteraction);
     root.addEventListener('touchstart', stopImageInteraction, { passive: true });
@@ -337,11 +347,14 @@ function openImageLightbox(reference) {
 
     const popup = new context.Popup(root, context.POPUP_TYPE.DISPLAY, '', {
         large: true,
+        transparent: true,
         allowVerticalScrolling: true,
         allowHorizontalScrolling: false,
         leftAlign: true,
     });
     popup.dlg.classList.add('image-schema-lightbox-dialog');
+    popup.dlg.style.width = 'unset';
+    popup.dlg.style.height = 'unset';
     popup.dlg.dataset.swipeIgnore = 'true';
 
     copyButton.addEventListener('click', event => {
