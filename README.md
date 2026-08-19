@@ -101,6 +101,8 @@ API key values are write-only: the plugin config response should expose only an 
 
 Each profile may also store a model-facing instruction template. `{{schemaprompt}}` is expanded by Image Schema to the complete global schema instruction before the value is given to SillyTavern. Ordinary SillyTavern macros such as `{{char}}` and `{{user}}` are intentionally left untouched for SillyTavern's normal extension-prompt macro pass. If the template omits `{{schemaprompt}}`, the global schema instruction is appended automatically.
 
+Image Schema also registers the normal SillyTavern macro `{{globalschemaprompt}}`. Prompt Manager can place it anywhere ordinary macros are accepted; it expands to the current Global Schema & Prompt instruction without per-profile wrapping. Disable automatic schema injection if using that macro in Prompt Manager to avoid duplicate instructions.
+
 ### Defaults and allowed overrides
 
 A default is trusted user configuration applied to every parsed request when present. **Allow** controls whether the model may replace/provide that parameter in inline or JSON mode. A model value that is recognized but not allowed becomes a visible parse error.

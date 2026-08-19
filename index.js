@@ -38,6 +38,7 @@ import {
 
 const MODULE_NAME = 'imageSchema';
 const PROMPT_KEY = 'image-schema-instruction';
+const GLOBAL_SCHEMA_MACRO = 'globalschemaprompt';
 const PLUGIN_BASE = '/api/plugins/image-schema';
 export const ROUTES = Object.freeze({
     status: `${PLUGIN_BASE}/status`,
@@ -583,8 +584,23 @@ function activeInstructionPrompt() {
     return selectInstructionProviderProfile(providerConfig, settings.defaults.backend)?.instructionPrompt || '';
 }
 
+function globalInstruction() {
+    return buildInstruction(settings);
+}
+
 function currentInstruction() {
     return buildInstruction(settings, activeInstructionPrompt());
+}
+
+function registerGlobalSchemaMacro() {
+    const macroApi = context?.macros;
+    if (!macroApi?.register) return;
+    macroApi.registry?.unregisterMacro?.(GLOBAL_SCHEMA_MACRO);
+    macroApi.register(GLOBAL_SCHEMA_MACRO, {
+        description: 'Expands to the current Image Schema Global Schema & Prompt instruction.',
+        returns: 'The global Image Schema instruction without per-profile wrapping.',
+        handler: () => globalInstruction(),
+    });
 }
 
 function onGenerationAfterCommands(type, options, dryRun) {
@@ -1239,6 +1255,7 @@ export async function init() {
     context.extensionSettings[MODULE_NAME] = settings;
 
     await addSettingsUi();
+    registerGlobalSchemaMacro();
     bindEvents();
     const chat = document.getElementById('chat');
     if (chat) {
@@ -1258,6 +1275,7 @@ export async function clean() {
     for (const [event, handler] of boundEvents.splice(0)) {
         context?.eventSource?.removeListener?.(event, handler);
     }
+    context?.macros?.registry?.unregisterMacro?.(GLOBAL_SCHEMA_MACRO);
     document.getElementById('image_schema_settings')?.remove();
     if (context?.chat) {
         for (const message of context.chat) clearLegacyProjectionMetadata(message);
