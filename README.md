@@ -99,6 +99,8 @@ For OpenAI-compatible providers, the URL field accepts either an API base URL or
 
 API key values are write-only: the plugin config response should expose only an `apiKeyConfigured` boolean. Replacement and clearing use the secret route directly. Keys are never copied during duplication and are never placed in `extensionSettings`.
 
+Each profile may also store a model-facing instruction template. `{{schemaprompt}}` is expanded by Image Schema to the complete global schema instruction before the value is given to SillyTavern. Ordinary SillyTavern macros such as `{{char}}` and `{{user}}` are intentionally left untouched for SillyTavern's normal extension-prompt macro pass. If the template omits `{{schemaprompt}}`, the global schema instruction is appended automatically.
+
 ### Defaults and allowed overrides
 
 A default is trusted user configuration applied to every parsed request when present. **Allow** controls whether the model may replace/provide that parameter in inline or JSON mode. A model value that is recognized but not allowed becomes a visible parse error.
@@ -149,9 +151,11 @@ A custom instruction is not validated against the parser settings. If it teaches
 
 Each rewritten image receives:
 
+- **Click/tap image**: opens SillyTavern's responsive popup with a contained large image, prompt, effective request, and copy/inspect/fresh-seed/close controls.
+- **Chevron**: hides or shows that image's compact action row for the current rendered frame.
 - **Copy**: copies the image prompt, not the full parameter object.
-- **Inspect**: displays the normalized extension request.
-- **Dice/regenerate**: assigns a random non-negative integer seed and changes the URL. This creates a new cache key; it does not remove the previous image.
+- **Inspect**: displays the normalized extension request in a SillyTavern popup.
+- **Dice/regenerate**: assigns a random non-negative integer seed and changes the URL. This creates a new cache key; it does not remove the previous image. Regeneration from the popup updates both the popup and its source image.
 
 The current UI has no per-image delete button. Use bulk clearing in settings. The plugin has request-specific delete/regenerate endpoints, but the extension does not currently call them.
 

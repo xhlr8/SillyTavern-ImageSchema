@@ -74,8 +74,8 @@
 
                         <section id="image_schema_provider_instruction_section" class="image-schema-provider-instruction" aria-labelledby="image_schema_provider_instruction_title">
                             <div id="image_schema_provider_instruction_title" class="image-schema-provider-section-title">Per-profile instruction</div>
-                            <label for="image_schema_provider_instruction">Image-schema instruction<textarea id="image_schema_provider_instruction" class="text_pole image-schema-textarea" rows="4" placeholder="Optional guidance for how the LLM should use this profile's image schema"></textarea></label>
-                            <small>Appended only to the model-facing image-schema instruction when this profile is selected by the global backend default, or is the provider default. This does not change the generated image prompt.</small>
+                            <label for="image_schema_provider_instruction">Profile instruction template<textarea id="image_schema_provider_instruction" class="text_pole image-schema-textarea" rows="5" placeholder="Provider-specific guidance...&#10;&#10;{{schemaprompt}}"></textarea></label>
+                            <small><code>{{schemaprompt}}</code> expands to the complete Global Schema &amp; Prompt instruction at this exact position. Other SillyTavern macros remain untouched for normal prompt processing. If omitted, the schema prompt is appended automatically. This does not change the generated image prompt.</small>
                         </section>
 
                         <details id="image_schema_provider_advanced" class="image-schema-subsection">

@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test --test-isolation=none parser.test.js provider.test.js test/parser.test.js",
-    "check": "node --check index.js && node --check parser.js && node --check provider.js"
+    "test": "node --test --test-isolation=none parser.test.js provider.test.js image-ui.test.js test/parser.test.js",
+    "check": "node --check index.js && node --check parser.js && node --check provider.js && node --check image-ui.js"
   }
 }

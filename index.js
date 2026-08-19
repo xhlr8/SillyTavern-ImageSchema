@@ -9,6 +9,12 @@ import {
     projectSchemas,
 } from './parser.js';
 import {
+    formatEffectiveRequest,
+    parseStoredImageRequest,
+    withFreshSeed,
+    withRefreshToken,
+} from './image-ui.js';
+import {
     COMFY_BINDING_KEYS,
     PROVIDER_ROUTE_PATHS,
     buildProviderProfilePayload,
@@ -176,11 +182,199 @@ function imageFailureLabel(image) {
     return 'Image generation failed';
 }
 
+function stopImageInteraction(event) {
+    event.stopPropagation();
+}
+
+function makeImageButton(className, label, iconName, { compact = false } = {}) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `menu_button ${className}${compact ? ' image-schema-compact-control' : ''}`;
+    button.title = label;
+    button.setAttribute('aria-label', label);
+    button.dataset.swipeIgnore = 'true';
+    const icon = document.createElement('i');
+    icon.className = `fa-solid ${iconName}`;
+    icon.setAttribute('aria-hidden', 'true');
+    icon.dataset.swipeIgnore = 'true';
+    button.append(icon);
+    return button;
+}
+
+function currentRenderedImage(reference) {
+    if (reference?.isConnected) return reference;
+    const messageId = reference?.dataset.imageSchemaMessage;
+    const occurrence = reference?.dataset.imageSchemaOccurrence;
+    if (messageId === undefined || occurrence === undefined) return null;
+    return document.querySelector(
+        `.image-schema-image[data-image-schema-message="${CSS.escape(messageId)}"][data-image-schema-occurrence="${CSS.escape(occurrence)}"]`,
+    );
+}
+
+function getImageRequest(image) {
+    return parseStoredImageRequest(currentRenderedImage(image)?.dataset.imageSchemaRequest);
+}
+
+async function copyImagePrompt(image) {
+    const request = getImageRequest(image);
+    if (!request) return notify('error', 'The current image request is unavailable.');
+    try {
+        await navigator.clipboard.writeText(request.text);
+        notify('success', 'Image prompt copied.');
+    } catch (error) {
+        notify('error', `Could not copy the image prompt: ${error.message}`);
+    }
+}
+
+function showRequestInspector(request) {
+    const current = request || null;
+    const popupContent = document.createElement('section');
+    popupContent.className = 'image-schema-inspector';
+    popupContent.dataset.swipeIgnore = 'true';
+    const heading = document.createElement('h3');
+    heading.textContent = 'Effective image request';
+    const output = document.createElement('pre');
+    output.className = 'image-schema-request-output';
+    output.textContent = formatEffectiveRequest(current);
+    popupContent.append(heading, output);
+
+    if (context?.Popup && context?.POPUP_TYPE) {
+        const popup = new context.Popup(popupContent, context.POPUP_TYPE.TEXT, '', {
+            okButton: 'Close',
+            wide: true,
+            allowVerticalScrolling: true,
+            allowHorizontalScrolling: false,
+            leftAlign: true,
+        });
+        popup.dlg.classList.add('image-schema-inspector-dialog');
+        void popup.show();
+    } else {
+        window.alert(output.textContent);
+    }
+}
+
+function regenerateImage(reference, onUpdated) {
+    const image = currentRenderedImage(reference);
+    const request = getImageRequest(image);
+    if (!image || !request) {
+        notify('error', 'The image is no longer present in the current message.');
+        return null;
+    }
+
+    const next = withFreshSeed(request);
+    const nextSource = withRefreshToken(pluginImageUrl(next));
+    const state = image.closest('.image-schema-frame')?.querySelector('.image-schema-state');
+    image.classList.remove('image-schema-loaded', 'image-schema-failed');
+    image.removeAttribute('title');
+    image.alt = request.text;
+    image.dataset.imageSchemaRequest = JSON.stringify(next);
+    image.src = nextSource;
+    if (state) state.textContent = 'Regenerating image with a fresh seed…';
+    onUpdated?.({ image, request: next, source: nextSource });
+    return next;
+}
+
+function openImageLightbox(reference) {
+    const image = currentRenderedImage(reference);
+    const request = getImageRequest(image);
+    if (!image || !request) return;
+
+    const root = document.createElement('section');
+    root.className = 'image-schema-lightbox';
+    root.dataset.swipeIgnore = 'true';
+
+    const largeImage = document.createElement('img');
+    largeImage.className = 'image-schema-lightbox-image';
+    largeImage.src = image.currentSrc || image.src;
+    largeImage.alt = image.alt || request.text;
+    largeImage.dataset.swipeIgnore = 'true';
+
+    const details = document.createElement('div');
+    details.className = 'image-schema-lightbox-details';
+    const promptLabel = document.createElement('div');
+    promptLabel.className = 'image-schema-lightbox-label';
+    promptLabel.textContent = 'Prompt';
+    const promptOutput = document.createElement('div');
+    promptOutput.className = 'image-schema-lightbox-prompt';
+    promptOutput.textContent = request.text;
+    const requestLabel = document.createElement('div');
+    requestLabel.className = 'image-schema-lightbox-label';
+    requestLabel.textContent = 'Effective request';
+    const requestOutput = document.createElement('pre');
+    requestOutput.className = 'image-schema-request-output image-schema-lightbox-request';
+    requestOutput.textContent = formatEffectiveRequest(request);
+    details.append(promptLabel, promptOutput, requestLabel, requestOutput);
+
+    const controls = document.createElement('div');
+    controls.className = 'image-schema-lightbox-controls';
+    controls.dataset.swipeIgnore = 'true';
+    const copyButton = makeImageButton('image-schema-lightbox-copy', 'Copy Prompt', 'fa-copy');
+    const inspectButton = makeImageButton('image-schema-lightbox-inspect', 'Inspect', 'fa-circle-info');
+    const regenerateButton = makeImageButton('image-schema-lightbox-regenerate', 'Regenerate Fresh Seed', 'fa-dice');
+    const closeButton = makeImageButton('image-schema-lightbox-close', 'Close', 'fa-xmark');
+    for (const [button, label] of [
+        [copyButton, 'Copy Prompt'],
+        [inspectButton, 'Inspect'],
+        [regenerateButton, 'Regenerate Fresh Seed'],
+        [closeButton, 'Close'],
+    ]) {
+        const text = document.createElement('span');
+        text.textContent = label;
+        text.dataset.swipeIgnore = 'true';
+        button.append(text);
+        controls.append(button);
+    }
+    root.append(largeImage, details, controls);
+
+    root.addEventListener('pointerdown', stopImageInteraction);
+    root.addEventListener('touchstart', stopImageInteraction, { passive: true });
+    root.addEventListener('click', stopImageInteraction);
+
+    if (!context?.Popup || !context?.POPUP_TYPE) {
+        showRequestInspector(request);
+        return;
+    }
+
+    const popup = new context.Popup(root, context.POPUP_TYPE.DISPLAY, '', {
+        large: true,
+        allowVerticalScrolling: true,
+        allowHorizontalScrolling: false,
+        leftAlign: true,
+    });
+    popup.dlg.classList.add('image-schema-lightbox-dialog');
+    popup.dlg.dataset.swipeIgnore = 'true';
+
+    copyButton.addEventListener('click', event => {
+        event.preventDefault();
+        void copyImagePrompt(reference);
+    });
+    inspectButton.addEventListener('click', event => {
+        event.preventDefault();
+        const currentRequest = getImageRequest(reference);
+        if (currentRequest) showRequestInspector(currentRequest);
+    });
+    regenerateButton.addEventListener('click', event => {
+        event.preventDefault();
+        regenerateImage(reference, ({ request: next, source }) => {
+            largeImage.src = source;
+            largeImage.alt = next.text;
+            promptOutput.textContent = next.text;
+            requestOutput.textContent = formatEffectiveRequest(next);
+        });
+    });
+    closeButton.addEventListener('click', event => {
+        event.preventDefault();
+        void popup.completeCancelled();
+    });
+    void popup.show();
+}
+
 function addImageControls(image, request, messageId, occurrence) {
     let frame = image.closest('.image-schema-frame');
     if (!frame) {
         frame = document.createElement('span');
         frame.className = 'image-schema-frame';
+        frame.dataset.swipeIgnore = 'true';
         image.replaceWith(frame);
         frame.append(image);
     }
@@ -189,6 +383,10 @@ function addImageControls(image, request, messageId, occurrence) {
     image.dataset.imageSchemaMessage = String(messageId);
     image.dataset.imageSchemaOccurrence = String(occurrence);
     image.dataset.imageSchemaRequest = JSON.stringify(request);
+    image.dataset.swipeIgnore = 'true';
+    image.tabIndex = 0;
+    image.setAttribute('role', 'button');
+    image.setAttribute('aria-label', `Open generated image: ${request.text}`);
 
     let state = frame.querySelector('.image-schema-state');
     if (!state) {
@@ -207,57 +405,67 @@ function addImageControls(image, request, messageId, occurrence) {
             image.classList.remove('image-schema-loaded');
             if (!image.classList.contains('image-schema-failed')) state.textContent = `${imageFailureLabel(image)}. Check Plugin activity for details.`;
         });
+        image.addEventListener('pointerdown', stopImageInteraction);
+        image.addEventListener('touchstart', stopImageInteraction, { passive: true });
+        image.addEventListener('click', event => {
+            event.preventDefault();
+            event.stopPropagation();
+            openImageLightbox(image);
+        });
+        image.addEventListener('keydown', event => {
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+            event.preventDefault();
+            event.stopPropagation();
+            openImageLightbox(image);
+        });
     }
     if (image.complete && image.naturalWidth > 0) {
         image.classList.add('image-schema-loaded');
         state.textContent = '';
     }
 
-    if (frame.querySelector('.image-schema-actions')) return;
+    if (frame.querySelector('.image-schema-action-bar')) return;
+    const actionBar = document.createElement('span');
+    actionBar.className = 'image-schema-action-bar';
+    actionBar.dataset.swipeIgnore = 'true';
+    const toggle = makeImageButton('image-schema-actions-toggle', 'Hide image actions', 'fa-chevron-down', { compact: true });
+    toggle.setAttribute('aria-expanded', 'true');
     const actions = document.createElement('span');
     actions.className = 'image-schema-actions';
+    actions.dataset.swipeIgnore = 'true';
     const controls = [
         ['image-schema-copy', 'Copy image prompt', 'fa-copy'],
         ['image-schema-inspect', 'Inspect effective request', 'fa-circle-info'],
         ['image-schema-regenerate', 'Regenerate with a fresh seed', 'fa-dice'],
     ];
-    for (const [className, title, iconName] of controls) {
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.className = `menu_button ${className}`;
-        button.title = title;
-        button.dataset.swipeIgnore = 'true';
-        const icon = document.createElement('i');
-        icon.className = `fa-solid ${iconName}`;
-        icon.dataset.swipeIgnore = 'true';
-        button.append(icon);
-        actions.append(button);
-    }
-    frame.append(actions);
+    for (const [className, title, iconName] of controls) actions.append(makeImageButton(className, title, iconName));
+    actionBar.append(toggle, actions);
+    frame.append(actionBar);
 
-    actions.addEventListener('pointerdown', event => event.stopPropagation());
-    actions.addEventListener('touchstart', event => event.stopPropagation(), { passive: true });
-    actions.querySelector('.image-schema-copy').addEventListener('click', async event => {
+    actionBar.addEventListener('pointerdown', stopImageInteraction);
+    actionBar.addEventListener('touchstart', stopImageInteraction, { passive: true });
+    actionBar.addEventListener('click', stopImageInteraction);
+    toggle.addEventListener('click', event => {
         event.preventDefault();
-        event.stopPropagation();
-        await navigator.clipboard.writeText(request.text);
-        notify('success', 'Image prompt copied.');
+        const isHidden = actions.classList.toggle('image-schema-actions-hidden');
+        toggle.setAttribute('aria-expanded', String(!isHidden));
+        toggle.setAttribute('aria-label', isHidden ? 'Show image actions' : 'Hide image actions');
+        toggle.title = isHidden ? 'Show image actions' : 'Hide image actions';
+        toggle.querySelector('i')?.classList.toggle('fa-chevron-down', !isHidden);
+        toggle.querySelector('i')?.classList.toggle('fa-chevron-right', isHidden);
+    });
+    actions.querySelector('.image-schema-copy').addEventListener('click', event => {
+        event.preventDefault();
+        void copyImagePrompt(image);
     });
     actions.querySelector('.image-schema-inspect').addEventListener('click', event => {
         event.preventDefault();
-        event.stopPropagation();
-        window.alert(JSON.stringify(request, null, 2));
+        const currentRequest = getImageRequest(image);
+        if (currentRequest) showRequestInspector(currentRequest);
     });
     actions.querySelector('.image-schema-regenerate').addEventListener('click', event => {
         event.preventDefault();
-        event.stopPropagation();
-        const next = structuredClone(request);
-        next.params.seed = Math.floor(Math.random() * 2147483647);
-        image.classList.remove('image-schema-loaded');
-        state.textContent = 'Regenerating image with a fresh seed…';
-        const separator = pluginImageUrl(next).includes('?') ? '&' : '?';
-        image.src = `${pluginImageUrl(next)}${separator}_refresh=${Date.now()}`;
-        image.dataset.imageSchemaRequest = JSON.stringify(next);
+        regenerateImage(image);
     });
 }
 
@@ -284,8 +492,13 @@ function rewriteImages(root, occurrences, messageId) {
             continue;
         }
         if (!match?.request) continue;
-        image.setAttribute('src', pluginImageUrl(match.request));
-        addImageControls(image, match.request, messageId, occurrenceNumber);
+        const sameRenderedOccurrence = image.dataset.imageSchema === 'true'
+            && image.dataset.imageSchemaMessage === String(messageId)
+            && image.dataset.imageSchemaOccurrence === String(occurrenceNumber);
+        const currentRequest = sameRenderedOccurrence ? parseStoredImageRequest(image.dataset.imageSchemaRequest) : null;
+        const effectiveRequest = currentRequest || match.request;
+        if (!sameRenderedOccurrence) image.setAttribute('src', pluginImageUrl(effectiveRequest));
+        addImageControls(image, effectiveRequest, messageId, occurrenceNumber);
         occurrenceNumber++;
     }
 }

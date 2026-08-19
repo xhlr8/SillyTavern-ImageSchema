@@ -337,11 +337,15 @@ function escapeAttribute(value) {
 export function buildInstruction(settingsInput, instructionPrompt = '') {
     const settings = normalizeSettings(settingsInput);
     const perProfileInstruction = String(instructionPrompt ?? '').trim();
-    const appendPerProfileInstruction = instruction => perProfileInstruction
-        ? `${instruction}\n\n--- Per-profile image-schema instruction ---\n${perProfileInstruction}\n--- End per-profile image-schema instruction ---`
-        : instruction;
+    const applyProfileTemplate = schemaPrompt => {
+        if (!perProfileInstruction) return schemaPrompt;
+        const template = perProfileInstruction.includes('{{schemaprompt}}')
+            ? perProfileInstruction
+            : `${perProfileInstruction}\n\n{{schemaprompt}}`;
+        return template.replaceAll('{{schemaprompt}}', schemaPrompt);
+    };
     if (settings.useCustomInstruction && String(settings.customInstruction).trim()) {
-        return appendPerProfileInstruction(String(settings.customInstruction).trim());
+        return applyProfileTemplate(String(settings.customInstruction).trim());
     }
     const allowed = PARAM_ORDER.filter(key => settings.allowedOverrides[key]);
     const aliases = { backend: 'b', aspect_ratio: 'ar', image_size: 's', output_format: 'f', temperature: 't', person_generation: 'p', width: 'w', height: 'h', negative: 'neg', model: 'model', seed: 'seed' };
@@ -349,10 +353,10 @@ export function buildInstruction(settingsInput, instructionPrompt = '') {
     const common = 'When an image would improve the response, include the image schema directly in the response. You may include multiple complete image schemas. Do not put image schemas inside code fences.';
 
     if (settings.schema === 'json') {
-        return appendPerProfileInstruction(`${common} Use strict JSON exactly between ${settings.jsonOpen} and ${settings.jsonClose}. The JSON object must contain both "${settings.jsonTextProperty}" (a non-empty image prompt string) and "${settings.jsonParamsProperty}" (an object, which may be empty). Example: ${settings.jsonOpen}{"${settings.jsonTextProperty}":"a silver-haired traveler","${settings.jsonParamsProperty}":{"seed":42}}${settings.jsonClose}.${allowedText}`);
+        return applyProfileTemplate(`${common} Use strict JSON exactly between ${settings.jsonOpen} and ${settings.jsonClose}. The JSON object must contain both "${settings.jsonTextProperty}" (a non-empty image prompt string) and "${settings.jsonParamsProperty}" (an object, which may be empty). Example: ${settings.jsonOpen}{"${settings.jsonTextProperty}":"a silver-haired traveler","${settings.jsonParamsProperty}":{"seed":42}}${settings.jsonClose}.${allowedText}`);
     }
     if (settings.schema === 'delimiter') {
-        return appendPerProfileInstruction(`${common} Put only the image prompt between ${settings.delimiterOpen} and ${settings.delimiterClose}; parameters are configured by the user. Example: ${settings.delimiterOpen}a silver-haired traveler at sunset${settings.delimiterClose}.`);
+        return applyProfileTemplate(`${common} Put only the image prompt between ${settings.delimiterOpen} and ${settings.delimiterClose}; parameters are configured by the user. Example: ${settings.delimiterOpen}a silver-haired traveler at sunset${settings.delimiterClose}.`);
     }
-    return appendPerProfileInstruction(`${common} Use an HTML image tag whose src starts with the virtual path ${settings.virtualPath} followed by encodeURIComponent(prompt). Use standard query syntax with literal & separators. Example: <img src="${settings.virtualPath}a%20silver-haired%20traveler?ar=3%3A4&seed=42">.${allowedText}`);
+    return applyProfileTemplate(`${common} Use an HTML image tag whose src starts with the virtual path ${settings.virtualPath} followed by encodeURIComponent(prompt). Use standard query syntax with literal & separators. Example: <img src="${settings.virtualPath}a%20silver-haired%20traveler?ar=3%3A4&seed=42">.${allowedText}`);
 }
