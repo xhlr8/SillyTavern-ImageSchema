@@ -44,6 +44,7 @@ const MODULE_NAME = 'imageSchema';
 const PROMPT_KEY = 'image-schema-instruction';
 const GLOBAL_SCHEMA_MACRO = 'globalschemaprompt';
 const PLUGIN_BASE = '/api/plugins/image-schema';
+const PROJECTED_IMAGE_PLACEHOLDER = 'data:image/gif;base64,R0lGODlhAQABAAAAACw=';
 export const ROUTES = Object.freeze({
     status: `${PLUGIN_BASE}/status`,
     test: `${PLUGIN_BASE}/test`,
@@ -147,7 +148,9 @@ function prepareMessageProjection(messageId) {
     clearLegacyProjectionMetadata(message);
     const source = String(message.mes ?? '');
     if (!settings.enabled) return { text: source, occurrences: [] };
-    return projectSchemas(source, settings, { urlForRequest: pluginImageUrl });
+    // Formatting receives a harmless placeholder so inserting the projected
+    // markup cannot race a direct <img> request against the status-aware fetch.
+    return projectSchemas(source, settings, { urlForRequest: () => PROJECTED_IMAGE_PLACEHOLDER });
 }
 
 async function pluginFetch(route, options = {}) {
@@ -169,6 +172,29 @@ async function pluginFetch(route, options = {}) {
         throw new Error(`${response.status} ${response.statusText}${detail ? `: ${detail}` : ''}`);
     }
     return body;
+}
+
+export async function fetchImageResource(source, fetchImpl = fetch, signal) {
+    const response = await fetchImpl(source, {
+        credentials: 'same-origin',
+        cache: 'no-store',
+        headers: requestHeaders(),
+        signal,
+    });
+    const errorCode = response.headers.get('x-image-error') || '';
+    const cache = response.headers.get('x-image-cache') || (errorCode ? 'ERROR' : '');
+    if (!response.ok) {
+        const detail = (await response.text().catch(() => '')).trim();
+        throw new Error(`${response.status} ${response.statusText}${detail ? `: ${detail}` : ''}`);
+    }
+    return {
+        blob: await response.blob(),
+        errorCode,
+        cache,
+        profile: response.headers.get('x-image-profile') || '',
+        requestedProfile: response.headers.get('x-image-requested-profile') || '',
+        fallbackReason: response.headers.get('x-image-fallback-reason') || '',
+    };
 }
 
 function getMessageElement(messageId) {
@@ -276,9 +302,10 @@ function regenerateImage(reference, onUpdated) {
     image.removeAttribute('title');
     image.alt = request.text;
     image.dataset.imageSchemaRequest = JSON.stringify(next);
-    image.src = nextSource;
+    void loadImageResource(image, nextSource, state).then(result => {
+        if (result) onUpdated?.({ image, request: next, source: result.source, result });
+    });
     if (state) state.textContent = 'Regenerating image with a fresh seed…';
-    onUpdated?.({ image, request: next, source: nextSource });
     return next;
 }
 
@@ -390,6 +417,83 @@ function openImageLightbox(reference) {
     void popup.show();
 }
 
+const imageObjectUrls = new WeakMap();
+const imageLoadControllers = new WeakMap();
+let imageLoadEpoch = 0;
+
+function revokeImageObjectUrl(image) {
+    const current = imageObjectUrls.get(image);
+    if (!current) return;
+    URL.revokeObjectURL(current);
+    imageObjectUrls.delete(image);
+}
+
+function disposeImageResource(image) {
+    imageLoadControllers.get(image)?.abort();
+    imageLoadControllers.delete(image);
+    image.dataset.imageSchemaLoadToken = String((Number(image.dataset.imageSchemaLoadToken) || 0) + 1);
+    revokeImageObjectUrl(image);
+}
+
+function disposeImageResources(root) {
+    const images = root?.matches?.('.image-schema-image')
+        ? [root]
+        : Array.from(root?.querySelectorAll?.('.image-schema-image') || []);
+    images.forEach(disposeImageResource);
+}
+
+async function loadImageResource(image, source, state) {
+    imageLoadControllers.get(image)?.abort();
+    const controller = new AbortController();
+    imageLoadControllers.set(image, controller);
+    const epoch = imageLoadEpoch;
+    const token = String((Number(image.dataset.imageSchemaLoadToken) || 0) + 1);
+    image.dataset.imageSchemaLoadToken = token;
+    image.dataset.imageSchemaSource = source;
+    delete image.dataset.imageError;
+    delete image.dataset.imageCache;
+    delete image.dataset.imageProfile;
+    delete image.dataset.imageRequestedProfile;
+    delete image.dataset.imageFallbackReason;
+    image.classList.remove('image-schema-loaded', 'image-schema-failed');
+    if (state) state.textContent = 'Generating image…';
+    try {
+        const result = await fetchImageResource(source, fetch, controller.signal);
+        if (epoch !== imageLoadEpoch || !image.isConnected || image.dataset.imageSchemaLoadToken !== token) return;
+        revokeImageObjectUrl(image);
+        const objectUrl = URL.createObjectURL(result.blob);
+        imageObjectUrls.set(image, objectUrl);
+        if (result.cache) image.dataset.imageCache = result.cache;
+        if (result.profile) image.dataset.imageProfile = result.profile;
+        if (result.requestedProfile) image.dataset.imageRequestedProfile = result.requestedProfile;
+        if (result.fallbackReason) image.dataset.imageFallbackReason = result.fallbackReason;
+        if (result.errorCode) {
+            image.dataset.imageError = result.errorCode;
+            image.classList.add('image-schema-failed');
+            image.title = `${imageFailureLabel(image)} (${result.errorCode})`;
+            if (state) state.textContent = `${imageFailureLabel(image)} · ${result.errorCode}. See Plugin activity.`;
+        } else {
+            const usedFallback = result.fallbackReason && result.profile && result.profile !== result.requestedProfile;
+            const title = usedFallback
+                ? `Generated by fallback profile ${result.profile} (${result.fallbackReason})`
+                : [result.cache, result.profile].filter(Boolean).join(' · ');
+            if (title) image.title = title;
+            else image.removeAttribute('title');
+        }
+        image.src = objectUrl;
+        return { ...result, source: objectUrl };
+    } catch (error) {
+        if (controller.signal.aborted || epoch !== imageLoadEpoch || !image.isConnected || image.dataset.imageSchemaLoadToken !== token) return;
+        image.dataset.imageError = 'request_failed';
+        image.classList.add('image-schema-failed');
+        image.removeAttribute('src');
+        image.title = error.message;
+        if (state) state.textContent = `Image request failed: ${error.message}`;
+    } finally {
+        if (imageLoadControllers.get(image) === controller) imageLoadControllers.delete(image);
+    }
+}
+
 function addImageControls(image, request, messageId, occurrence) {
     let frame = image.closest('.image-schema-frame');
     if (!frame) {
@@ -419,8 +523,13 @@ function addImageControls(image, request, messageId, occurrence) {
     if (image.dataset.imageSchemaListeners !== 'true') {
         image.dataset.imageSchemaListeners = 'true';
         image.addEventListener('load', () => {
-            image.classList.add('image-schema-loaded');
-            state.textContent = '';
+            image.classList.toggle('image-schema-loaded', !image.dataset.imageError);
+            if (!image.dataset.imageError) {
+                const usedFallback = image.dataset.imageFallbackReason && image.dataset.imageProfile !== image.dataset.imageRequestedProfile;
+                state.textContent = usedFallback
+                    ? `Loaded · ${image.dataset.imageCache || 'MISS'} · fallback ${image.dataset.imageProfile} (${image.dataset.imageFallbackReason})`
+                    : ['Loaded', image.dataset.imageCache, image.dataset.imageProfile].filter(Boolean).join(' · ');
+            }
         });
         image.addEventListener('error', () => {
             image.classList.remove('image-schema-loaded');
@@ -442,7 +551,7 @@ function addImageControls(image, request, messageId, occurrence) {
     }
     if (image.complete && image.naturalWidth > 0) {
         image.classList.add('image-schema-loaded');
-        state.textContent = '';
+        if (!image.dataset.imageError && !image.dataset.imageCache) state.textContent = '';
     }
 
     const existingActions = frame.querySelector('.image-schema-actions');
@@ -511,8 +620,13 @@ function rewriteImages(root, occurrences, messageId) {
             && image.dataset.imageSchemaOccurrence === String(occurrenceNumber);
         const currentRequest = sameRenderedOccurrence ? parseStoredImageRequest(image.dataset.imageSchemaRequest) : null;
         const effectiveRequest = currentRequest || match.request;
-        if (!sameRenderedOccurrence) image.setAttribute('src', pluginImageUrl(effectiveRequest));
+        const source = pluginImageUrl(effectiveRequest);
+        if (!sameRenderedOccurrence) image.removeAttribute('src');
         addImageControls(image, effectiveRequest, messageId, occurrenceNumber);
+        if (!sameRenderedOccurrence) {
+            const state = image.closest('.image-schema-frame')?.querySelector('.image-schema-state');
+            void loadImageResource(image, source, state);
+        }
         occurrenceNumber++;
     }
 }
@@ -536,9 +650,12 @@ function renderMessage(messageId) {
     // contents when this active swipe actually has a schema and the matching
     // ephemeral projection is not already present.
     const expectedKeys = projection.occurrences.filter(item => item.request).map(item => item.key).filter(Boolean);
-    const renderedKeys = new Set(Array.from(textElement.querySelectorAll('[data-image-schema-key]')).map(node => node.getAttribute('data-image-schema-key')));
-    const projectionPresent = expectedKeys.length > 0 && expectedKeys.every(key => renderedKeys.has(key));
+    const renderedKeys = Array.from(textElement.querySelectorAll('[data-image-schema-key]')).map(node => node.getAttribute('data-image-schema-key'));
+    const projectionPresent = expectedKeys.length > 0
+        && expectedKeys.length === renderedKeys.length
+        && expectedKeys.every((key, index) => key === renderedKeys[index]);
     if (projection.occurrences.length > 0 && !projectionPresent) {
+        disposeImageResources(textElement);
         textElement.innerHTML = context.messageFormatting(
             projection.text,
             message.name,
@@ -567,6 +684,9 @@ function onMutations(records) {
     if (!settings.enabled) return;
     const messageIds = new Set();
     for (const record of records) {
+        for (const node of record.removedNodes) {
+            if (node.nodeType === Node.ELEMENT_NODE) disposeImageResources(node);
+        }
         for (const node of record.addedNodes) {
             if (node.nodeType !== Node.ELEMENT_NODE) continue;
             if (node.matches?.('.mes[mesid]')) messageIds.add(node.getAttribute('mesid'));
@@ -654,6 +774,11 @@ function setValue(id, input) {
 function setChecked(id, input) {
     const element = document.getElementById(id);
     if (element instanceof HTMLInputElement) element.checked = Boolean(input);
+}
+
+function setText(id, input) {
+    const element = document.getElementById(id);
+    if (element) element.textContent = String(input ?? '');
 }
 
 function setProviderResult(value) {
@@ -1326,12 +1451,19 @@ function renderErrorStatus(result) {
 
 async function refreshPluginDiagnostics() {
     const output = document.getElementById('image_schema_diagnostics_output');
+    let result;
     try {
-        const result = await pluginFetch(`${ROUTES.diagnosticsRecent}?limit=100`);
-        if (output) output.textContent = JSON.stringify(result, null, 2);
-        renderErrorStatus(result);
+        result = await pluginFetch(`${ROUTES.diagnosticsRecent}?limit=100`);
     } catch (error) {
         if (output) output.textContent = `Diagnostics unavailable: ${error.message}`;
+        return;
+    }
+    if (output) output.textContent = JSON.stringify(result, null, 2);
+    try {
+        renderErrorStatus(result);
+    } catch (error) {
+        console.error('[Image Schema] Could not render diagnostics summary', error);
+        if (output) output.textContent += `\n\nDiagnostics loaded, but the summary could not render: ${error.message}`;
     }
 }
 
@@ -1451,6 +1583,7 @@ export async function init() {
 }
 
 export async function clean() {
+    imageLoadEpoch++;
     disarmPrompt();
     observer?.disconnect();
     observer = undefined;
@@ -1462,6 +1595,7 @@ export async function clean() {
     if (context?.chat) {
         for (const message of context.chat) clearLegacyProjectionMetadata(message);
     }
+    document.querySelectorAll('.image-schema-image').forEach(disposeImageResource);
     comfyWorkflow = null;
     comfyWorkflowName = '';
     comfyCandidates = Object.fromEntries(COMFY_BINDING_KEYS.map(key => [key, []]));

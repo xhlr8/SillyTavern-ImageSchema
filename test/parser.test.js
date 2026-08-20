@@ -11,12 +11,12 @@ import {
 
 function settings(overrides = {}) {
     return normalizeSettings({
-        allowedOverrides: {
-            seed: true,
-            aspect_ratio: true,
-            image_size: true,
-            output_format: true,
-            negative: true,
+        parameterPolicies: {
+            seed: 'allow',
+            aspect_ratio: 'allow',
+            image_size: 'allow',
+            output_format: 'allow',
+            negative: 'allow',
         },
         ...overrides,
     });
@@ -36,8 +36,12 @@ test('inline schema accepts HTML-serialized ampersands', () => {
     assert.equal(result.params.seed, 7);
 });
 
-test('inline schema rejects disallowed model overrides', () => {
-    assert.throws(() => parseVirtualSource('/image/cat?b=openai', settings()), /not allowed/);
+test('inline schema ignores disabled model overrides and rejects fixed ones', () => {
+    assert.deepEqual(parseVirtualSource('/image/cat?b=openai', settings()), { text: 'cat', params: {} });
+    assert.throws(() => parseVirtualSource('/image/cat?b=openai', settings({
+        parameterPolicies: { backend: 'fixed' },
+        defaults: { backend: 'safe' },
+    })), /fixed/);
 });
 
 test('delimiter schema extracts text only and applies configured defaults', () => {

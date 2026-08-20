@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { pluginImageUrl } from './index.js';
+import { fetchImageResource, pluginImageUrl } from './index.js';
 import {
     DEFAULT_SETTINGS,
     buildInstruction,
@@ -100,6 +100,19 @@ test('schemas in code blocks can be ignored', () => {
     assert.deepEqual(parseMessage(source, cfg).map(x => x.request.text), ['this']);
 });
 
+test('projection keys preserve exact image order and reject stale subsets', () => {
+    const config = settings({ schema: 'delimiter' });
+    const original = projectSchemas('<image>one</image><image>two</image>', config);
+    const reduced = projectSchemas('<image>two</image>', config);
+    const expectedKeys = reduced.occurrences.map(item => item.key);
+    const renderedKeys = original.occurrences.map(item => item.key);
+    assert.notDeepEqual(expectedKeys, renderedKeys);
+    assert.equal(
+        expectedKeys.length === renderedKeys.length && expectedKeys.every((key, index) => key === renderedKeys[index]),
+        false,
+    );
+});
+
 test('projection converts JSON wrappers without mutating original text', () => {
     const source = 'Before <image>{"text":"a & b","params":{}}</image> After';
     const result = projectSchemas(source, settings({ schema: 'json' }));
@@ -136,6 +149,37 @@ test('per-profile instructions without schemaprompt append the global schema pro
 test('profile templates expand only schemaprompt and preserve SillyTavern macros', () => {
     const instruction = buildInstruction(settings({ useCustomInstruction: true, customInstruction: 'CUSTOM {{char}}' }), 'PROFILE {{user}}\n{{schemaprompt}}');
     assert.equal(instruction, 'PROFILE {{user}}\nCUSTOM {{char}}');
+});
+
+test('status-aware image fetch exposes cache, error, and fallback provenance headers', async () => {
+    const body = new Blob(['svg'], { type: 'image/svg+xml' });
+    const result = await fetchImageResource('/image/test', async (source, options) => {
+        assert.equal(source, '/image/test');
+        assert.equal(options.credentials, 'same-origin');
+        return new Response(body, {
+            status: 200,
+            headers: {
+                'X-Image-Cache': 'ERROR',
+                'X-Image-Error': 'upstream_error',
+                'X-Image-Profile': 'fallback',
+                'X-Image-Requested-Profile': 'primary',
+                'X-Image-Fallback-Reason': 'connection_error',
+            },
+        });
+    });
+    assert.equal(result.errorCode, 'upstream_error');
+    assert.equal(result.cache, 'ERROR');
+    assert.equal(result.profile, 'fallback');
+    assert.equal(result.requestedProfile, 'primary');
+    assert.equal(result.fallbackReason, 'connection_error');
+    assert.equal(await result.blob.text(), 'svg');
+});
+
+test('status-aware image fetch preserves useful non-image errors', async () => {
+    await assert.rejects(fetchImageResource('/image/test', async () => new Response('invalid_profile: missing', {
+        status: 400,
+        statusText: 'Bad Request',
+    })), /400 Bad Request: invalid_profile: missing/);
 });
 
 test('plugin URL is hidden and maps normalized names to plugin contract', () => {
