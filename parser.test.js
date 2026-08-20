@@ -9,6 +9,7 @@ import {
     parseMessage,
     parseVirtualSource,
     projectSchemas,
+    replaceSchemaOccurrence,
 } from './parser.js';
 
 function settings(overrides = {}) {
@@ -98,6 +99,28 @@ test('schemas in code blocks can be ignored', () => {
     const cfg = settings({ schema: 'delimiter', delimiterOpen: '[IMAGE]', delimiterClose: '[/IMAGE]', ignoreCodeBlocks: true });
     const source = '```\n[IMAGE]not this[/IMAGE]\n```\n[IMAGE]this[/IMAGE]';
     assert.deepEqual(parseMessage(source, cfg).map(x => x.request.text), ['this']);
+});
+
+test('replacing an inline schema persists a fresh seed in the canonical message', () => {
+    const config = settings({ schema: 'inline' });
+    const source = '<div><img class="portrait" src="/image/person?seed=42&ar=3%3A4"></div>';
+    const updated = replaceSchemaOccurrence(source, 0, {
+        text: 'person',
+        params: { seed: 99, aspect_ratio: '3:4' },
+    }, config);
+    assert.match(updated, /class="portrait"/);
+    assert.match(updated, /seed=99/);
+    assert.doesNotMatch(updated, /seed=42/);
+    assert.deepEqual(parseMessage(updated, config)[0].request.params, { seed: 99, aspect_ratio: '3:4' });
+});
+
+test('same seeded schema keeps the same projected request across reloads', () => {
+    const config = settings({ schema: 'inline' });
+    const source = '<img src="/image/person?seed=42">';
+    const first = projectSchemas(source, config);
+    const reloaded = projectSchemas(source, config);
+    assert.deepEqual(first.occurrences[0].request, reloaded.occurrences[0].request);
+    assert.equal(first.occurrences[0].key, reloaded.occurrences[0].key);
 });
 
 test('projection keys preserve exact image order and reject stale subsets', () => {

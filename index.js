@@ -7,6 +7,7 @@ import {
     normalizeSettings,
     parseMessage,
     projectSchemas,
+    replaceSchemaOccurrence,
 } from './parser.js';
 import {
     formatEffectiveRequest,
@@ -287,7 +288,20 @@ function showRequestInspector(request) {
     }
 }
 
-function regenerateImage(reference, onUpdated) {
+async function persistImageRequest(image, request) {
+    const messageId = Number(image.dataset.imageSchemaMessage);
+    const occurrence = Number(image.dataset.imageSchemaOccurrence);
+    const message = context.chat?.[messageId];
+    if (!message || !Number.isInteger(occurrence)) throw new Error('The source message is unavailable.');
+    message.mes = replaceSchemaOccurrence(message.mes, occurrence, request, settings);
+    if (typeof message.swipe_id === 'number' && Array.isArray(message.swipes) && message.swipe_id < message.swipes.length) {
+        message.swipes[message.swipe_id] = message.mes;
+    }
+    context.updateMessageBlock?.(messageId, message);
+    await context.saveChat();
+}
+
+async function regenerateImage(reference, onUpdated, { freshSeed = false } = {}) {
     const image = currentRenderedImage(reference);
     const request = getImageRequest(image);
     if (!image || !request) {
@@ -295,7 +309,15 @@ function regenerateImage(reference, onUpdated) {
         return null;
     }
 
-    const next = withFreshSeed(request);
+    const next = freshSeed ? withFreshSeed(request) : request;
+    if (freshSeed) {
+        try {
+            await persistImageRequest(image, next);
+        } catch (error) {
+            notify('error', `The fresh seed could not be saved: ${error.message}`);
+            return null;
+        }
+    }
     const nextSource = withRefreshToken(pluginImageUrl(next));
     const state = image.closest('.image-schema-frame')?.querySelector('.image-schema-state');
     image.classList.remove('image-schema-loaded', 'image-schema-failed');
@@ -305,7 +327,7 @@ function regenerateImage(reference, onUpdated) {
     void loadImageResource(image, nextSource, state).then(result => {
         if (result) onUpdated?.({ image, request: next, source: result.source, result });
     });
-    if (state) state.textContent = 'Regenerating image with a fresh seed…';
+    if (state) state.textContent = freshSeed ? 'Generating image with a new seed…' : 'Regenerating image with the existing seed…';
     return next;
 }
 
@@ -369,12 +391,14 @@ function openImageLightbox(reference) {
     controls.dataset.swipeIgnore = 'true';
     const copyButton = makeImageButton('image-schema-lightbox-copy', 'Copy Prompt', 'fa-copy');
     const inspectButton = makeImageButton('image-schema-lightbox-inspect', 'Inspect', 'fa-circle-info');
-    const regenerateButton = makeImageButton('image-schema-lightbox-regenerate', 'Regenerate Fresh Seed', 'fa-dice');
+    const retryButton = makeImageButton('image-schema-lightbox-retry', 'Regen with Same Seed', 'fa-rotate');
+    const regenerateButton = makeImageButton('image-schema-lightbox-regenerate', 'New Seed', 'fa-dice');
     const closeButton = makeImageButton('image-schema-lightbox-close', 'Close', 'fa-xmark');
     for (const [button, label] of [
         [copyButton, 'Copy Prompt'],
         [inspectButton, 'Inspect'],
-        [regenerateButton, 'Regenerate Fresh Seed'],
+        [retryButton, 'Regen'],
+        [regenerateButton, 'New Seed'],
         [closeButton, 'Close'],
     ]) {
         const text = document.createElement('span');
@@ -415,16 +439,22 @@ function openImageLightbox(reference) {
         const currentRequest = getImageRequest(reference);
         if (currentRequest) showRequestInspector(currentRequest);
     });
+    const updateLightbox = ({ request: next, source }) => {
+        largeImage.src = source;
+        largeImage.alt = next.text;
+        promptOutput.textContent = next.text;
+        requestOutput.textContent = formatEffectiveRequest(next);
+        statusOutput.textContent = settledImageStatus(image);
+    };
+    retryButton.addEventListener('click', event => {
+        event.preventDefault();
+        statusOutput.textContent = 'Regenerating image with the existing seed…';
+        void regenerateImage(reference, updateLightbox);
+    });
     regenerateButton.addEventListener('click', event => {
         event.preventDefault();
-        statusOutput.textContent = 'Regenerating image with a fresh seed…';
-        regenerateImage(reference, ({ request: next, source }) => {
-            largeImage.src = source;
-            largeImage.alt = next.text;
-            promptOutput.textContent = next.text;
-            requestOutput.textContent = formatEffectiveRequest(next);
-            statusOutput.textContent = settledImageStatus(image);
-        });
+        statusOutput.textContent = 'Generating image with a new seed…';
+        void regenerateImage(reference, updateLightbox, { freshSeed: true });
     });
     closeButton.addEventListener('click', event => {
         event.preventDefault();
@@ -580,7 +610,7 @@ function addImageControls(image, request, messageId, occurrence) {
     const controls = [
         ['image-schema-copy', 'Copy image prompt', 'fa-copy'],
         ['image-schema-inspect', 'Inspect effective request', 'fa-circle-info'],
-        ['image-schema-regenerate', 'Regenerate with a fresh seed', 'fa-dice'],
+        ['image-schema-regenerate', 'Generate and save a fresh seed', 'fa-dice'],
     ];
     for (const [className, title, iconName] of controls) actions.append(makeImageButton(className, title, iconName));
     frame.append(actions);
@@ -599,7 +629,7 @@ function addImageControls(image, request, messageId, occurrence) {
     });
     actions.querySelector('.image-schema-regenerate').addEventListener('click', event => {
         event.preventDefault();
-        regenerateImage(image);
+        void regenerateImage(image, undefined, { freshSeed: true });
     });
 }
 

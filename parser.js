@@ -311,6 +311,28 @@ function occurrenceKey(occurrence, duplicateIndex) {
     return (hash >>> 0).toString(36);
 }
 
+export function replaceSchemaOccurrence(sourceInput, occurrenceIndex, request, settingsInput) {
+    const source = String(sourceInput ?? '');
+    const settings = normalizeSettings(settingsInput);
+    const occurrences = parseMessage(source, settings);
+    const occurrence = occurrences[Number(occurrenceIndex)];
+    if (!occurrence?.request) throw new Error('image schema occurrence is no longer available');
+
+    let replacement;
+    if (settings.schema === 'inline') {
+        replacement = replaceImageSource(occurrence.raw, requestToVirtualUrl(request, settings));
+    } else if (settings.schema === 'json') {
+        replacement = `${settings.jsonOpen}${JSON.stringify({
+            [settings.jsonTextProperty]: request.text,
+            [settings.jsonParamsProperty]: request.params,
+        })}${settings.jsonClose}`;
+    } else {
+        if (Object.keys(request.params || {}).length) throw new Error('delimited image schemas cannot persist per-image parameters');
+        replacement = `${settings.delimiterOpen}${request.text}${settings.delimiterClose}`;
+    }
+    return `${source.slice(0, occurrence.start)}${replacement}${source.slice(occurrence.end)}`;
+}
+
 export function projectSchemas(sourceInput, settingsInput, options = {}) {
     const source = String(sourceInput ?? '');
     const settings = normalizeSettings(settingsInput);
