@@ -16,7 +16,8 @@ function settings(overrides = {}) {
         ...structuredClone(DEFAULT_SETTINGS),
         ...overrides,
         defaults: { ...DEFAULT_SETTINGS.defaults, ...(overrides.defaults || {}) },
-        allowedOverrides: { ...DEFAULT_SETTINGS.allowedOverrides, ...(overrides.allowedOverrides || {}) },
+        parameterPolicies: { ...DEFAULT_SETTINGS.parameterPolicies, ...(overrides.parameterPolicies || {}) },
+        allowedOverrides: overrides.allowedOverrides,
     });
 }
 
@@ -45,14 +46,15 @@ test('inline parser rejects conflicting aliases and id parameter', () => {
     assert.throws(() => parseVirtualSource('/image/test?id=separate-id', settings()), /unknown image parameter: id/);
 });
 
-test('disallowed override is rejected', () => {
-    assert.throws(() => parseVirtualSource('/image/test?backend=secret-profile', settings()), /not allowed/);
+test('ignored overrides are silently omitted and fixed overrides are rejected', () => {
+    assert.deepEqual(parseVirtualSource('/image/test?backend=secret-profile', settings()), { text: 'test', params: {} });
+    assert.throws(() => parseVirtualSource('/image/test?backend=secret-profile', settings({ parameterPolicies: { backend: 'fixed' }, defaults: { backend: 'safe' } })), /fixed/);
 });
 
 test('defaults merge before overrides and canonicalize values', () => {
     const request = normalizeRequest(' prompt ', { f: 'PNG', t: '1.2' }, settings({
         defaults: { backend: 'gemini', image_size: '1k' },
-        allowedOverrides: { temperature: true },
+        parameterPolicies: { backend: 'fixed', image_size: 'fixed', temperature: 'allow' },
     }));
     assert.deepEqual(request, {
         text: 'prompt',

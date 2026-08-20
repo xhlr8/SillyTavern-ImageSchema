@@ -44,12 +44,19 @@ export function normalizeComfyBinding(value) {
     const binding = {
         node: String(coordinate.node).trim(),
         input: firstString(coordinate.input),
-        label: firstString(value.label, value.reason, coordinate.label, value.classType, coordinate.classType),
+        label: firstString(value.label, coordinate.label),
         path,
     };
     if (Number.isFinite(confidence)) binding.confidence = confidence;
-    const warning = firstString(value.warning, coordinate.warning);
-    if (warning) binding.warning = warning;
+    for (const [key, item] of [
+        ['reason', firstString(value.reason, coordinate.reason)],
+        ['warning', firstString(value.warning, coordinate.warning)],
+        ['classType', firstString(value.classType, value.class_type, coordinate.classType, coordinate.class_type)],
+        ['title', firstString(value.title, coordinate.title)],
+        ['scalar', firstString(value.scalar, coordinate.scalar)],
+    ]) {
+        if (item) binding[key] = item;
+    }
     return binding;
 }
 
@@ -93,25 +100,161 @@ export function normalizeComfyCandidates(input = {}) {
     return output;
 }
 
-export function inferComfyWorkflowCandidates(workflow) {
-    const output = Object.fromEntries(COMFY_BINDING_KEYS.map(key => [key, []]));
-    if (!isPlainObject(workflow)) return output;
+function isComfyLink(value) {
+    return Array.isArray(value) && value.length >= 2 && ['string', 'number'].includes(typeof value[0]);
+}
+
+function comfyScalarText(value) {
+    if (typeof value === 'string') return value;
+    if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+    if (isComfyLink(value)) return `linked from ${value[0]}.${value[1]}`;
+    try { return JSON.stringify(value); } catch { return String(value); }
+}
+
+function bindingDescriptor(workflow, node) {
+    const descriptor = isPlainObject(workflow?.[node]) ? workflow[node] : {};
+    return {
+        descriptor,
+        classType: firstString(descriptor.class_type) || 'Unknown',
+        title: firstString(descriptor._meta?.title),
+    };
+}
+
+export function formatComfyBindingLabel(binding, workflow = {}) {
+    const normalized = normalizeComfyBinding(binding);
+    if (!normalized) return '';
+    const descriptor = bindingDescriptor(workflow, normalized.node);
+    const classType = firstString(normalized.classType, descriptor.classType) || 'Unknown';
+    const title = firstString(normalized.title, descriptor.title);
+    const coordinate = `${normalized.node}${normalized.input ? `.${normalized.input}` : ''}`;
+    return `${coordinate} — ${classType}${title ? ` “${title}”` : ''}${normalized.warning ? ' ⚠' : ''}`;
+}
+
+export function formatComfyBindingHelp(binding) {
+    const normalized = normalizeComfyBinding(binding);
+    if (!normalized) return '';
+    const details = [];
+    if (normalized.reason) details.push(normalized.reason);
+    if (normalized.path) details.push(`Path: ${normalized.path}`);
+    if (Number.isFinite(normalized.confidence)) details.push(`Confidence: ${Math.round(normalized.confidence * 100)}%`);
+    if (normalized.warning) details.push(`Warning: ${normalized.warning}`);
+    return details.join(' · ');
+}
+
+function localCandidate(workflow, node, input, role, value, overrides = {}) {
+    const { classType, title } = bindingDescriptor(workflow, node);
+    const linked = isComfyLink(value);
+    const path = `/${node}/inputs/${input}`;
+    return normalizeComfyBinding({
+        node,
+        input,
+        classType,
+        title,
+        scalar: comfyScalarText(value),
+        path,
+        reason: linked ? `Linked ${role} input` : `Direct ${role} scalar input`,
+        warning: linked ? 'Selecting this input replaces its workflow link' : '',
+        confidence: linked ? 0.35 : 0.5,
+        ...overrides,
+    });
+}
+
+function roleScore(role, semantic, linked) {
+    const patterns = {
+        positivePrompt: /positive|(^|\W)prompt|text|string/i,
+        negativePrompt: /negative|neg[_ -]?prompt/i,
+        seed: /seed|noise/i,
+        width: /width|resolution[_ -]?x|size[_ -]?x/i,
+        height: /height|resolution[_ -]?y|size[_ -]?y/i,
+    };
+    if (role === 'positivePrompt' && /negative|neg[_ -]?prompt/i.test(semantic)) return linked ? 0.3 : 0.42;
+    const exact = patterns[role]?.test(semantic);
+    return exact ? (linked ? 0.78 : 0.94) : (linked ? 0.35 : 0.5);
+}
+
+export function enumerateComfyWorkflowCandidates(workflow, key) {
+    if (!COMFY_BINDING_KEYS.includes(key) || !isPlainObject(workflow)) return [];
+    const candidates = [];
     for (const [node, descriptor] of Object.entries(workflow)) {
-        if (!isPlainObject(descriptor) || !isPlainObject(descriptor.inputs)) continue;
-        const classType = firstString(descriptor.class_type);
-        const title = firstString(descriptor._meta?.title);
-        const semanticName = `${classType} ${title}`;
-        for (const [input, literal] of Object.entries(descriptor.inputs)) {
-            if (typeof literal === 'string' && /prompt|string/i.test(`${semanticName} ${input}`)) {
-                output.positivePrompt.push(normalizeComfyBinding({ node, input, label: `${title || classType} · ${input}`, confidence: /prompt/i.test(title) ? 0.94 : 0.55, path: `/${node}/inputs/${input}` }));
+        if (!isPlainObject(descriptor)) continue;
+        const { classType, title } = bindingDescriptor(workflow, node);
+        if (key === 'outputNode') {
+            if (/(save|preview).*image|image.*(save|preview)/i.test(`${classType} ${title}`)) {
+                candidates.push(normalizeComfyBinding({
+                    node,
+                    input: '',
+                    classType,
+                    title,
+                    path: `/${node}`,
+                    reason: `${classType} is a workflow image output node`,
+                    confidence: /save/i.test(classType) ? 0.98 : 0.88,
+                }));
             }
-            if (Number.isSafeInteger(literal) && literal >= 0 && /seed/i.test(`${semanticName} ${input}`)) {
-                output.seed.push(normalizeComfyBinding({ node, input, label: `${title || classType} · ${input}`, confidence: 0.94, path: `/${node}/inputs/${input}` }));
+            continue;
+        }
+        if (!isPlainObject(descriptor.inputs)) continue;
+        for (const [input, scalar] of Object.entries(descriptor.inputs)) {
+            const linked = isComfyLink(scalar);
+            const semantic = `${node} ${classType} ${title} ${input}`;
+            const stringRole = key === 'positivePrompt' || key === 'negativePrompt';
+            const integerRole = key === 'seed' || key === 'width' || key === 'height';
+            const compatible = stringRole
+                ? typeof scalar === 'string' || (linked && /prompt|text|string|positive|negative/i.test(semantic))
+                : integerRole && ((Number.isSafeInteger(scalar) && scalar >= 0) || (linked && ({
+                    seed: /seed|noise/i,
+                    width: /width|resolution|size|dimension/i,
+                    height: /height|resolution|size|dimension/i,
+                })[key].test(semantic)));
+            if (!compatible) continue;
+            candidates.push(localCandidate(workflow, node, input, key, scalar, {
+                confidence: roleScore(key, semantic, linked),
+                reason: linked ? `Linked input compatible with ${key}` : `Direct scalar compatible with ${key}`,
+            }));
+        }
+    }
+    return mergeComfyCandidates({ [key]: candidates })[key];
+}
+
+function upstreamScalarCandidates(workflow, key, sinks) {
+    const output = [];
+    const wantedType = key === 'positivePrompt' || key === 'negativePrompt' ? 'string' : 'integer';
+    for (const sink of sinks) {
+        const sinkValue = workflow?.[sink.node]?.inputs?.[sink.input];
+        if (!isComfyLink(sinkValue)) continue;
+        const queue = [{ node: String(sinkValue[0]), path: `${sink.node}.${sink.input} → ${sinkValue[0]}.${sinkValue[1]}`, depth: 0 }];
+        const visited = new Set();
+        while (queue.length) {
+            const current = queue.shift();
+            if (current.depth > 6 || visited.has(current.node)) continue;
+            visited.add(current.node);
+            const descriptor = workflow?.[current.node];
+            if (!isPlainObject(descriptor?.inputs)) continue;
+            const { classType, title } = bindingDescriptor(workflow, current.node);
+            for (const [input, scalar] of Object.entries(descriptor.inputs)) {
+                const semantic = `${classType} ${title} ${input}`;
+                const directCompatible = wantedType === 'string' ? typeof scalar === 'string' : Number.isSafeInteger(scalar) && scalar >= 0;
+                if (directCompatible) {
+                    const semanticMatch = roleScore(key, semantic, false) > 0.5 || /primitive|resolution|dimension|size/i.test(`${classType} ${title}`);
+                    output.push(localCandidate(workflow, current.node, input, key, scalar, {
+                        confidence: semanticMatch ? Math.max(0.86, (sink.confidence ?? 0.5) - current.depth * 0.04) : 0.62,
+                        reason: `Upstream ${wantedType} scalar for ${sink.node}.${sink.input}`,
+                        path: `${current.path} → ${current.node}.${input}`,
+                    }));
+                } else if (isComfyLink(scalar)) {
+                    queue.push({ node: String(scalar[0]), path: `${current.path} → ${current.node}.${input} → ${scalar[0]}.${scalar[1]}`, depth: current.depth + 1 });
+                }
             }
         }
-        if (/saveimage/i.test(classType)) output.outputNode.push(normalizeComfyBinding({ node, input: '', label: title || classType, confidence: 0.98, path: `/${node}` }));
     }
-    for (const key of COMFY_BINDING_KEYS) output[key] = output[key].filter(Boolean).sort((left, right) => (right.confidence ?? -1) - (left.confidence ?? -1));
+    return output;
+}
+
+export function inferComfyWorkflowCandidates(workflow) {
+    const output = Object.fromEntries(COMFY_BINDING_KEYS.map(key => [key, enumerateComfyWorkflowCandidates(workflow, key)]));
+    if (!isPlainObject(workflow)) return output;
+    for (const key of ['positivePrompt', 'negativePrompt', 'width', 'height']) {
+        output[key] = mergeComfyCandidates({ [key]: [...upstreamScalarCandidates(workflow, key, output[key]), ...output[key]] })[key];
+    }
     return output;
 }
 
@@ -128,6 +271,14 @@ export function mergeComfyCandidates(...candidateSets) {
         }).sort((left, right) => (right.confidence ?? -1) - (left.confidence ?? -1));
     }
     return output;
+}
+
+export function chooseComfyBinding(workflow, key, current, candidates = []) {
+    const selected = normalizeComfyBinding(current);
+    const descriptor = selected && isPlainObject(workflow?.[selected.node]) ? workflow[selected.node] : null;
+    const valid = Boolean(descriptor && (key === 'outputNode' || (selected.input && isPlainObject(descriptor.inputs) && Object.hasOwn(descriptor.inputs, selected.input))));
+    if (valid) return selected;
+    return normalizeComfyBinding(candidates[0]);
 }
 
 export function countComfyWorkflowNodes(workflow) {
@@ -281,7 +432,13 @@ export function normalizeProviderConfig(input = {}) {
             : [];
     const namedProfiles = profiles.filter(profile => profile.name);
     const defaultProfile = firstString(source.defaultProfile, source.default, source.defaultProvider);
-    return { profiles: namedProfiles, defaultProfile };
+    const routingSource = isPlainObject(source.routing) ? source.routing : {};
+    const routing = {
+        enabled: routingSource.enabled === true,
+        fallbackProfile: firstString(routingSource.fallbackProfile),
+        fallbackOn: Array.isArray(routingSource.fallbackOn) ? routingSource.fallbackOn.map(String) : [],
+    };
+    return { profiles: namedProfiles, defaultProfile, routing };
 }
 
 export function selectInstructionProviderProfile(configInput = {}, backendDefault = '') {

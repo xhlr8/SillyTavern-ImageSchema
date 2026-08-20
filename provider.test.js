@@ -118,7 +118,7 @@ test('ComfyUI analyzer candidates normalize plugin and descriptor response shape
     } });
     assert.equal(candidates.positivePrompt[0].node, '1');
     assert.equal(candidates.positivePrompt[0].warning, 'Review');
-    assert.equal(candidates.positivePrompt[1].label, 'fallback');
+    assert.equal(candidates.positivePrompt[1].reason, 'fallback');
     assert.match(candidates.positivePrompt[1].path, /2\.text/);
     assert.equal(candidates.outputNode[0].node, '9');
 });

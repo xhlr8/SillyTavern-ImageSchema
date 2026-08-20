@@ -48,10 +48,10 @@ export const DEFAULT_SETTINGS = Object.freeze({
         output_format: '', temperature: '', person_generation: '', width: '',
         height: '', negative: '',
     },
-    allowedOverrides: {
-        backend: false, model: false, seed: true, aspect_ratio: true, image_size: true,
-        output_format: true, temperature: false, person_generation: false,
-        width: false, height: false, negative: true,
+    parameterPolicies: {
+        backend: 'ignore', model: 'ignore', seed: 'allow', aspect_ratio: 'allow', image_size: 'allow',
+        output_format: 'allow', temperature: 'ignore', person_generation: 'ignore',
+        width: 'ignore', height: 'ignore', negative: 'allow',
     },
     injectInstruction: true,
     injectQuiet: false,
@@ -80,11 +80,27 @@ export function normalizeSettings(input = {}) {
     if (!isPlainObject(input)) return result;
 
     for (const key of Object.keys(result)) {
-        if (key === 'defaults' || key === 'allowedOverrides') continue;
+        if (key === 'defaults' || key === 'parameterPolicies') continue;
         if (Object.hasOwn(input, key)) result[key] = input[key];
     }
     if (isPlainObject(input.defaults)) Object.assign(result.defaults, input.defaults);
-    if (isPlainObject(input.allowedOverrides)) Object.assign(result.allowedOverrides, input.allowedOverrides);
+
+    const hasParameterPolicies = isPlainObject(input.parameterPolicies);
+    const legacyAllowedOverrides = isPlainObject(input.allowedOverrides) ? input.allowedOverrides : {};
+    for (const key of PARAM_ORDER) {
+        if (hasParameterPolicies && Object.hasOwn(input.parameterPolicies, key)) {
+            const policy = input.parameterPolicies[key];
+            result.parameterPolicies[key] = ['ignore', 'fixed', 'allow'].includes(policy)
+                ? policy
+                : DEFAULT_SETTINGS.parameterPolicies[key];
+            continue;
+        }
+        if (Object.hasOwn(legacyAllowedOverrides, key)) {
+            result.parameterPolicies[key] = legacyAllowedOverrides[key]
+                ? 'allow'
+                : String(result.defaults[key] ?? '').trim() ? 'fixed' : 'ignore';
+        }
+    }
 
     result.enabled = Boolean(result.enabled);
     result.schema = ['inline', 'delimiter', 'json'].includes(result.schema) ? result.schema : 'inline';
@@ -137,8 +153,10 @@ export function normalizeRequest(text, suppliedParams, settingsInput, options = 
             if (settings.unknownParameterPolicy === 'reject') throw new Error(`unknown image parameter: ${rawKey}`);
             continue;
         }
-        if (!options.trustedParams && !settings.allowedOverrides[key]) {
-            throw new Error(`image parameter is not allowed as a model override: ${rawKey}`);
+        const policy = settings.parameterPolicies[key];
+        if (!options.trustedParams && policy === 'ignore') continue;
+        if (!options.trustedParams && policy === 'fixed') {
+            throw new Error(`image parameter is fixed and cannot be overridden by the model: ${rawKey}`);
         }
         const value = canonicalizeValue(key, rawValue);
         if (seen.has(key) && seen.get(key) !== value) throw new Error(`conflicting aliases for image parameter: ${key}`);
@@ -148,6 +166,7 @@ export function normalizeRequest(text, suppliedParams, settingsInput, options = 
 
     const params = {};
     for (const key of PARAM_ORDER) {
+        if (settings.parameterPolicies[key] === 'ignore') continue;
         const fallback = canonicalizeValue(key, settings.defaults[key]);
         if (fallback !== '') params[key] = fallback;
     }
@@ -348,7 +367,7 @@ export function buildInstruction(settingsInput, instructionPrompt = '') {
     if (settings.useCustomInstruction && String(settings.customInstruction).trim()) {
         return applyProfileTemplate(String(settings.customInstruction).trim());
     }
-    const allowed = PARAM_ORDER.filter(key => settings.allowedOverrides[key]);
+    const allowed = PARAM_ORDER.filter(key => settings.parameterPolicies[key] === 'allow');
     const aliases = { backend: 'b', aspect_ratio: 'ar', image_size: 's', output_format: 'f', temperature: 't', person_generation: 'p', width: 'w', height: 'h', negative: 'neg', model: 'model', seed: 'seed' };
     const allowedText = allowed.length ? ` Allowed optional parameters: ${allowed.map(key => `${aliases[key]} (${key})`).join(', ')}.` : '';
     const common = 'When an image would improve the response, include the image schema directly in the response. You may include multiple complete image schemas. Do not put image schemas inside code fences.';

@@ -18,7 +18,11 @@ import {
     COMFY_BINDING_KEYS,
     PROVIDER_ROUTE_PATHS,
     buildProviderProfilePayload,
+    chooseComfyBinding,
     countComfyWorkflowNodes,
+    enumerateComfyWorkflowCandidates,
+    formatComfyBindingHelp,
+    formatComfyBindingLabel,
     inferComfyWorkflowCandidates,
     mergeComfyCandidates,
     normalizeComfyBinding,
@@ -46,10 +50,13 @@ export const ROUTES = Object.freeze({
     image: `${PLUGIN_BASE}/image/`,
     cacheStats: `${PLUGIN_BASE}/cache/stats`,
     cacheClear: `${PLUGIN_BASE}/cache/clear`,
+    outputsStats: `${PLUGIN_BASE}/outputs/stats`,
+    outputsClear: `${PLUGIN_BASE}/outputs/clear`,
     providerConfig: `${PLUGIN_BASE}${PROVIDER_ROUTE_PATHS.config}`,
     providerProfileSave: `${PLUGIN_BASE}${PROVIDER_ROUTE_PATHS.profileSave}`,
     providerProfileDelete: `${PLUGIN_BASE}${PROVIDER_ROUTE_PATHS.profileDelete}`,
     providerDefault: `${PLUGIN_BASE}${PROVIDER_ROUTE_PATHS.defaultProfile}`,
+    providerRouting: `${PLUGIN_BASE}/providers/routing`,
     providerSecret: `${PLUGIN_BASE}${PROVIDER_ROUTE_PATHS.secret}`,
     providerProfileTest: `${PLUGIN_BASE}${PROVIDER_ROUTE_PATHS.profileTest}`,
     providerComfyAnalyze: `${PLUGIN_BASE}${PROVIDER_ROUTE_PATHS.comfyAnalyze}`,
@@ -664,6 +671,9 @@ const COMFY_BINDING_CONTROLS = Object.freeze({
     outputNode: 'image_schema_comfy_binding_output',
 });
 
+const COMFY_BINDING_BROWSE_CONTROLS = Object.freeze(Object.fromEntries(COMFY_BINDING_KEYS.map(key => [key, `${COMFY_BINDING_CONTROLS[key]}_browse`])));
+const COMFY_BINDING_HELP_CONTROLS = Object.freeze(Object.fromEntries(COMFY_BINDING_KEYS.map(key => [key, `${COMFY_BINDING_CONTROLS[key]}_help`])));
+
 function comfyBindingToken(binding) {
     return binding ? JSON.stringify({ node: binding.node, input: binding.input || '' }) : '';
 }
@@ -678,43 +688,125 @@ function comfyBindingsFromForm() {
     return Object.fromEntries(COMFY_BINDING_KEYS.map(key => [key, readComfyBinding(key)]));
 }
 
-function formatComfyBinding(binding) {
-    const coordinate = `${binding.node}${binding.input ? ` · ${binding.input}` : ''}`;
-    const confidence = Number.isFinite(binding.confidence) ? ` · ${Math.round(binding.confidence * 100)}%` : '';
-    const warning = binding.warning ? ' ⚠' : '';
-    return `${binding.label || coordinate}${confidence}${warning}`;
+function updateComfyBindingHelp(key) {
+    const help = document.getElementById(COMFY_BINDING_HELP_CONTROLS[key]);
+    const select = document.getElementById(COMFY_BINDING_CONTROLS[key]);
+    if (!help || !(select instanceof HTMLSelectElement)) return;
+    const binding = readComfyBinding(key);
+    const details = formatComfyBindingHelp(binding);
+    help.textContent = details;
+    help.title = details;
 }
 
-function populateComfyBindingSelect(key, selected = null) {
+function populateComfyBindingSelect(key, selected = undefined) {
     const select = document.getElementById(COMFY_BINDING_CONTROLS[key]);
     if (!(select instanceof HTMLSelectElement)) return;
     const candidates = comfyCandidates[key] || [];
+    const current = selected === undefined ? readComfyBinding(key) : normalizeComfyBinding(selected);
+    const selectedBinding = chooseComfyBinding(comfyWorkflow, key, current, candidates);
     select.replaceChildren();
     if (key !== 'positivePrompt') {
         const none = document.createElement('option');
         none.value = '';
         none.textContent = 'None';
         select.append(none);
-    } else if (!candidates.length && !selected) {
+    } else if (!candidates.length && !selectedBinding) {
         const missing = document.createElement('option');
         missing.value = '';
-        missing.textContent = 'No candidates — analyze workflow';
+        missing.textContent = 'No candidates — Browse workflow';
         select.append(missing);
     }
-    const selectedBinding = normalizeComfyBinding(selected);
     const merged = [...candidates];
     if (selectedBinding && !merged.some(candidate => comfyBindingToken(candidate) === comfyBindingToken(selectedBinding))) merged.unshift(selectedBinding);
     for (const binding of merged) {
         const option = document.createElement('option');
         option.value = comfyBindingToken(binding);
-        option.textContent = formatComfyBinding(binding);
-        option.title = [binding.path, binding.warning].filter(Boolean).join(' — ');
+        option.textContent = formatComfyBindingLabel(binding, comfyWorkflow);
+        option.title = formatComfyBindingHelp(binding);
         select.append(option);
     }
     const selectedToken = comfyBindingToken(selectedBinding);
     if (selectedToken && Array.from(select.options).some(option => option.value === selectedToken)) select.value = selectedToken;
-    else if (candidates.length) select.value = comfyBindingToken(candidates[0]);
     else select.value = '';
+    updateComfyBindingHelp(key);
+}
+
+function selectComfyBrowseCandidate(key, binding) {
+    const candidate = normalizeComfyBinding(binding);
+    if (!candidate) return;
+    comfyCandidates = mergeComfyCandidates({ [key]: [candidate] }, comfyCandidates);
+    populateComfyBindingSelect(key, candidate);
+    updateComfyValidation();
+}
+
+function openComfyBindingBrowser(key) {
+    if (!comfyWorkflow) return notify('error', 'Load an API workflow before browsing bindings.');
+    const candidates = enumerateComfyWorkflowCandidates(comfyWorkflow, key);
+    const root = document.createElement('section');
+    root.className = 'image-schema-comfy-browser';
+    root.dataset.swipeIgnore = 'true';
+    const heading = document.createElement('h3');
+    heading.textContent = `Browse ${key === 'outputNode' ? 'output' : key} bindings`;
+    const search = document.createElement('input');
+    search.className = 'text_pole image-schema-comfy-browser-search';
+    search.type = 'search';
+    search.placeholder = 'Search node, class, title, input, or current value';
+    search.setAttribute('aria-label', 'Search compatible workflow inputs');
+    const list = document.createElement('div');
+    list.className = 'image-schema-comfy-browser-list';
+    root.append(heading, search, list);
+    let popup;
+    const render = () => {
+        const query = search.value.trim().toLocaleLowerCase();
+        list.replaceChildren();
+        const matches = candidates.filter(binding => [
+            binding.node,
+            binding.input,
+            binding.classType,
+            binding.title,
+            binding.scalar,
+            formatComfyBindingLabel(binding, comfyWorkflow),
+        ].some(part => String(part || '').toLocaleLowerCase().includes(query)));
+        if (!matches.length) {
+            const empty = document.createElement('div');
+            empty.className = 'image-schema-comfy-browser-empty';
+            empty.textContent = 'No compatible inputs match this search.';
+            list.append(empty);
+            return;
+        }
+        for (const binding of matches) {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'menu_button image-schema-comfy-browser-option';
+            const label = document.createElement('span');
+            label.textContent = formatComfyBindingLabel(binding, comfyWorkflow);
+            const scalar = document.createElement('small');
+            scalar.textContent = binding.scalar ? `Current: ${binding.scalar}` : formatComfyBindingHelp(binding);
+            button.append(label, scalar);
+            button.title = formatComfyBindingHelp(binding);
+            button.addEventListener('click', () => {
+                selectComfyBrowseCandidate(key, binding);
+                if (popup) void popup.completeCancelled();
+            });
+            list.append(button);
+        }
+    };
+    search.addEventListener('input', render);
+    render();
+    if (context?.Popup && context?.POPUP_TYPE) {
+        popup = new context.Popup(root, context.POPUP_TYPE.DISPLAY, '', {
+            okButton: 'Close',
+            wide: true,
+            allowVerticalScrolling: true,
+            allowHorizontalScrolling: false,
+            leftAlign: true,
+        });
+        popup.dlg.classList.add('image-schema-comfy-browser-dialog');
+        void popup.show().then(() => undefined);
+        queueMicrotask(() => search.focus());
+    } else {
+        notify('error', 'Binding browser is unavailable in this SillyTavern version.');
+    }
 }
 
 function updateComfyValidation(message = '') {
@@ -791,8 +883,9 @@ async function analyzeComfyWorkflow() {
             body: JSON.stringify({ url, workflow: comfyWorkflow }),
         });
         const analysis = result?.analysis || result;
+        const currentBindings = comfyBindingsFromForm();
         comfyCandidates = mergeComfyCandidates(normalizeComfyCandidates(analysis), inferComfyWorkflowCandidates(comfyWorkflow));
-        for (const key of COMFY_BINDING_KEYS) populateComfyBindingSelect(key);
+        for (const key of COMFY_BINDING_KEYS) populateComfyBindingSelect(key, currentBindings[key]);
         const issues = [
             ...(!comfyCandidates.positivePrompt.length ? ['No positive prompt binding candidate was found.'] : []),
             ...(analysis?.missingClassTypes?.length ? [`Missing node classes: ${analysis.missingClassTypes.join(', ')}`] : []),
@@ -933,12 +1026,43 @@ async function refreshProviders(selectedName = '') {
     try {
         providerConfig = normalizeProviderConfig(await pluginFetch(ROUTES.providerConfig));
         renderProviderSelector(selectedName);
+        populateRoutingControls();
         refreshInstructionPreview();
         setProviderResult(`${providerConfig.profiles.length} provider profile(s) loaded.`);
         return providerConfig;
     } catch (error) {
         setProviderResult(`Provider profiles unavailable: ${error.message}`);
         throw error;
+    }
+}
+
+function populateRoutingControls() {
+    const selector = document.getElementById('image_schema_fallback_profile');
+    if (selector instanceof HTMLSelectElement) {
+        selector.replaceChildren(new Option('Choose a profile', ''));
+        for (const profile of providerConfig.profiles) selector.append(new Option(profile.name, profile.name));
+        selector.value = providerConfig.routing?.fallbackProfile || '';
+    }
+    setChecked('image_schema_fallback_enabled', providerConfig.routing?.enabled === true);
+    const selectedCodes = new Set(providerConfig.routing?.fallbackOn || []);
+    document.querySelectorAll('#image_schema_fallback_conditions input[type="checkbox"]').forEach(input => {
+        input.checked = selectedCodes.has(input.value);
+    });
+}
+
+async function saveRouting() {
+    try {
+        const fallbackOn = Array.from(document.querySelectorAll('#image_schema_fallback_conditions input[type="checkbox"]:checked')).map(input => input.value);
+        const body = {
+            enabled: checked('image_schema_fallback_enabled'),
+            fallbackProfile: value('image_schema_fallback_profile') || null,
+            fallbackOn,
+        };
+        await pluginFetch(ROUTES.providerRouting, { method: 'POST', body: JSON.stringify(body) });
+        notify('success', 'Fallback routing saved.');
+        await refreshProviders(providerOriginalName);
+    } catch (error) {
+        notify('error', error.message);
     }
 }
 
@@ -1079,9 +1203,12 @@ function readSettingsForm() {
     settings.customInstruction = value('image_schema_custom_instruction');
     for (const key of PARAM_ORDER) {
         settings.defaults[key] = value(`image_schema_default_${key}`);
-        settings.allowedOverrides[key] = checked(`image_schema_allow_${key}`);
+        settings.parameterPolicies[key] = value(`image_schema_policy_${key}`);
     }
     settings = normalizeSettings(settings);
+    for (const key of PARAM_ORDER) {
+        document.getElementById(`image_schema_default_${key}`)?.toggleAttribute('disabled', settings.parameterPolicies[key] === 'ignore');
+    }
     saveSettings();
     refreshInstructionPreview();
     queueRenderAll();
@@ -1106,7 +1233,8 @@ function populateSettingsForm() {
     setValue('image_schema_custom_instruction', settings.customInstruction);
     for (const key of PARAM_ORDER) {
         setValue(`image_schema_default_${key}`, settings.defaults[key]);
-        setChecked(`image_schema_allow_${key}`, settings.allowedOverrides[key]);
+        setValue(`image_schema_policy_${key}`, settings.parameterPolicies[key]);
+        document.getElementById(`image_schema_default_${key}`)?.toggleAttribute('disabled', settings.parameterPolicies[key] === 'ignore');
     }
     refreshInstructionPreview();
 }
@@ -1179,14 +1307,52 @@ async function clearCache() {
     } catch (error) { notify('error', error.message); }
 }
 
+function renderErrorStatus(result) {
+    const events = Array.isArray(result?.events) ? result.events : [];
+    const errors = events.filter(event => event.level === 'error');
+    const latest = errors.at(-1) ?? null;
+    setText('image_schema_error_count', `${errors.length} error${errors.length === 1 ? '' : 's'}`);
+    setText('image_schema_error_latest', latest ? `${latest.event}${latest.profile ? ` · ${latest.profile}` : ''}${latest.code ? ` · ${latest.code}` : ''}` : 'No recent sanitized errors.');
+    const badge = document.getElementById('image_schema_status_badge');
+    if (badge) {
+        badge.dataset.state = errors.length ? 'error' : 'ok';
+        badge.textContent = errors.length ? `${errors.length} error${errors.length === 1 ? '' : 's'}` : 'OK';
+    }
+    document.getElementById('image_schema_copy_error')?.toggleAttribute('disabled', !latest);
+    document.getElementById('image_schema_clear_errors')?.toggleAttribute('disabled', !errors.length);
+    if (errors.length) document.getElementById('image_schema_status_section')?.setAttribute('open', '');
+    document.getElementById('image_schema_copy_error')?.setAttribute('data-error-text', latest ? JSON.stringify(latest, null, 2) : '');
+}
+
 async function refreshPluginDiagnostics() {
     const output = document.getElementById('image_schema_diagnostics_output');
     try {
         const result = await pluginFetch(`${ROUTES.diagnosticsRecent}?limit=100`);
         if (output) output.textContent = JSON.stringify(result, null, 2);
+        renderErrorStatus(result);
     } catch (error) {
         if (output) output.textContent = `Diagnostics unavailable: ${error.message}`;
     }
+}
+
+async function refreshOutputStats() {
+    const output = document.getElementById('image_schema_output_stats');
+    try {
+        const stats = await pluginFetch(ROUTES.outputsStats);
+        if (output) output.textContent = JSON.stringify(stats, null, 2);
+    } catch (error) {
+        if (output) output.textContent = `Unavailable: ${error.message}`;
+    }
+}
+
+async function clearOutputs() {
+    if (!window.confirm('Permanently delete durable generated outputs for this user? Existing chats may lose images.')) return;
+    if (!window.confirm('This cannot be undone. Delete durable outputs?')) return;
+    try {
+        await pluginFetch(ROUTES.outputsClear, { method: 'POST', body: '{}' });
+        await refreshOutputStats();
+        notify('success', 'Durable outputs deleted.');
+    } catch (error) { notify('error', error.message); }
 }
 
 async function clearPluginDiagnostics() {
@@ -1224,10 +1390,18 @@ async function addSettingsUi() {
     document.getElementById('image_schema_test_generation')?.addEventListener('click', testGeneration);
     document.getElementById('image_schema_refresh_cache')?.addEventListener('click', refreshCacheStats);
     document.getElementById('image_schema_clear_cache')?.addEventListener('click', clearCache);
+    document.getElementById('image_schema_refresh_outputs')?.addEventListener('click', refreshOutputStats);
+    document.getElementById('image_schema_clear_outputs')?.addEventListener('click', clearOutputs);
+    document.getElementById('image_schema_copy_error')?.addEventListener('click', async event => {
+        const text = event.currentTarget.dataset.errorText;
+        if (text) await navigator.clipboard.writeText(text);
+    });
+    document.getElementById('image_schema_clear_errors')?.addEventListener('click', clearPluginDiagnostics);
     document.getElementById('image_schema_diagnostics_refresh')?.addEventListener('click', refreshPluginDiagnostics);
     document.getElementById('image_schema_diagnostics_clear')?.addEventListener('click', clearPluginDiagnostics);
     document.getElementById('image_schema_provider_profile')?.addEventListener('change', selectProvider);
     document.getElementById('image_schema_provider_refresh')?.addEventListener('click', () => refreshProviders(providerOriginalName).catch(error => notify('error', error.message)));
+    document.getElementById('image_schema_save_routing')?.addEventListener('click', saveRouting);
     document.getElementById('image_schema_provider_add')?.addEventListener('click', addProvider);
     document.getElementById('image_schema_provider_duplicate')?.addEventListener('click', duplicateProvider);
     document.getElementById('image_schema_provider_delete')?.addEventListener('click', deleteProvider);
@@ -1238,7 +1412,13 @@ async function addSettingsUi() {
     document.getElementById('image_schema_comfy_workflow_file')?.addEventListener('change', importComfyWorkflow);
     document.getElementById('image_schema_comfy_workflow_clear')?.addEventListener('click', clearComfyWorkflow);
     document.getElementById('image_schema_comfy_analyze')?.addEventListener('click', analyzeComfyWorkflow);
-    for (const id of Object.values(COMFY_BINDING_CONTROLS)) document.getElementById(id)?.addEventListener('change', () => updateComfyValidation());
+    for (const key of COMFY_BINDING_KEYS) {
+        document.getElementById(COMFY_BINDING_CONTROLS[key])?.addEventListener('change', () => {
+            updateComfyBindingHelp(key);
+            updateComfyValidation();
+        });
+        document.getElementById(COMFY_BINDING_BROWSE_CONTROLS[key])?.addEventListener('click', () => openComfyBindingBrowser(key));
+    }
     document.getElementById('image_schema_provider_save')?.addEventListener('click', saveProvider);
     document.getElementById('image_schema_provider_set_default')?.addEventListener('click', setDefaultProvider);
     document.getElementById('image_schema_provider_key_replace')?.addEventListener('click', replaceProviderSecret);
@@ -1266,6 +1446,8 @@ export async function init() {
     checkPluginStatus().catch(() => {});
     refreshProviders().catch(() => {});
     refreshCacheStats();
+    refreshOutputStats();
+    refreshPluginDiagnostics();
 }
 
 export async function clean() {
