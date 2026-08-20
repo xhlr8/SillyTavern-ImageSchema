@@ -309,6 +309,16 @@ function regenerateImage(reference, onUpdated) {
     return next;
 }
 
+function settledImageStatus(image) {
+    if (image.dataset.imageError) {
+        return `${imageFailureLabel(image)} · ${image.dataset.imageError}${image.dataset.imageProfile ? ` · ${image.dataset.imageProfile}` : ''}`;
+    }
+    const usedFallback = image.dataset.imageFallbackReason && image.dataset.imageProfile !== image.dataset.imageRequestedProfile;
+    return usedFallback
+        ? `Loaded · ${image.dataset.imageCache || 'MISS'} · fallback ${image.dataset.imageProfile} (${image.dataset.imageFallbackReason})`
+        : ['Loaded', image.dataset.imageCache, image.dataset.imageProfile].filter(Boolean).join(' · ');
+}
+
 function openImageLightbox(reference) {
     const image = currentRenderedImage(reference);
     const request = getImageRequest(image);
@@ -333,6 +343,10 @@ function openImageLightbox(reference) {
         largeImage.classList.toggle('zoomed', !largeImage.classList.contains('zoomed'));
         event.stopPropagation();
     });
+
+    const statusOutput = document.createElement('div');
+    statusOutput.className = 'image-schema-lightbox-status';
+    statusOutput.textContent = settledImageStatus(image);
 
     const details = document.createElement('div');
     details.className = 'image-schema-lightbox-details';
@@ -369,7 +383,7 @@ function openImageLightbox(reference) {
         button.append(text);
         controls.append(button);
     }
-    root.append(imageContainer, details, controls);
+    root.append(statusOutput, imageContainer, details, controls);
 
     root.addEventListener('pointerdown', stopImageInteraction);
     root.addEventListener('touchstart', stopImageInteraction, { passive: true });
@@ -403,11 +417,13 @@ function openImageLightbox(reference) {
     });
     regenerateButton.addEventListener('click', event => {
         event.preventDefault();
+        statusOutput.textContent = 'Regenerating image with a fresh seed…';
         regenerateImage(reference, ({ request: next, source }) => {
             largeImage.src = source;
             largeImage.alt = next.text;
             promptOutput.textContent = next.text;
             requestOutput.textContent = formatEffectiveRequest(next);
+            statusOutput.textContent = settledImageStatus(image);
         });
     });
     closeButton.addEventListener('click', event => {
@@ -524,12 +540,7 @@ function addImageControls(image, request, messageId, occurrence) {
         image.dataset.imageSchemaListeners = 'true';
         image.addEventListener('load', () => {
             image.classList.toggle('image-schema-loaded', !image.dataset.imageError);
-            if (!image.dataset.imageError) {
-                const usedFallback = image.dataset.imageFallbackReason && image.dataset.imageProfile !== image.dataset.imageRequestedProfile;
-                state.textContent = usedFallback
-                    ? `Loaded · ${image.dataset.imageCache || 'MISS'} · fallback ${image.dataset.imageProfile} (${image.dataset.imageFallbackReason})`
-                    : ['Loaded', image.dataset.imageCache, image.dataset.imageProfile].filter(Boolean).join(' · ');
-            }
+            if (!image.dataset.imageError) state.textContent = '';
         });
         image.addEventListener('error', () => {
             image.classList.remove('image-schema-loaded');
