@@ -297,7 +297,8 @@ async function persistImageRequest(image, request) {
     if (typeof message.swipe_id === 'number' && Array.isArray(message.swipes) && message.swipe_id < message.swipes.length) {
         message.swipes[message.swipe_id] = message.mes;
     }
-    context.updateMessageBlock?.(messageId, message);
+    // Keep the current image node connected while the replacement loads; the
+    // updated canonical message is persisted now and rendered on the next reload.
     await context.saveChat();
 }
 
