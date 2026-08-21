@@ -4,6 +4,8 @@ import { fetchImageResource, pluginImageUrl } from './index.js';
 import {
     DEFAULT_SETTINGS,
     buildInstruction,
+    composeInstruction,
+    migrateDuplicateProfileInstruction,
     normalizeRequest,
     normalizeSettings,
     parseMessage,
@@ -153,6 +155,28 @@ test('generated instruction exposes only the virtual path and documents literal 
 
 test('custom instruction is used exactly', () => {
     assert.equal(buildInstruction(settings({ useCustomInstruction: true, customInstruction: 'CUSTOM' })), 'CUSTOM');
+});
+
+test('duplicate profile instructions migrate to a global schema token', () => {
+    assert.equal(migrateDuplicateProfileInstruction('GLOBAL', 'GLOBAL'), '{{global_schema}}');
+    assert.equal(migrateDuplicateProfileInstruction('Before\nGLOBAL\nAfter', 'GLOBAL'), 'Before\n{{global_schema}}\nAfter');
+    assert.equal(migrateDuplicateProfileInstruction('OTHER', 'GLOBAL'), 'OTHER');
+});
+
+test('global_schema token inserts global instruction and reports placement', () => {
+    const result = composeInstruction('GLOBAL', 'Before\n{{global_schema}}\nAfter');
+    assert.deepEqual(result, { text: 'Before\nGLOBAL\nAfter', placement: 'inserted', token: '{{global_schema}}' });
+});
+
+test('legacy schemaprompt token remains a compatibility alias', () => {
+    const result = composeInstruction('GLOBAL', 'Before {{schemaprompt}} After');
+    assert.deepEqual(result, { text: 'Before GLOBAL After', placement: 'inserted', token: '{{schemaprompt}}' });
+});
+
+test('profile guidance without a token appends global schema exactly once', () => {
+    const result = composeInstruction('GLOBAL', 'PROFILE');
+    assert.deepEqual(result, { text: 'PROFILE\n\nGLOBAL', placement: 'appended', token: null });
+    assert.equal(result.text.match(/GLOBAL/g).length, 1);
 });
 
 test('per-profile instruction templates place the schema prompt at schemaprompt', () => {

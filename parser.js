@@ -376,16 +376,31 @@ function escapeAttribute(value) {
     return escapeText(value).replaceAll('"', '&quot;');
 }
 
+export function composeInstruction(schemaPromptInput, instructionPrompt = '') {
+    const schemaPrompt = String(schemaPromptInput ?? '').trim();
+    const profileInstruction = String(instructionPrompt ?? '').trim();
+    if (!profileInstruction) return { text: schemaPrompt, placement: 'global-only', token: null };
+    const token = profileInstruction.includes('{{global_schema}}')
+        ? '{{global_schema}}'
+        : profileInstruction.includes('{{schemaprompt}}') ? '{{schemaprompt}}' : null;
+    if (!token) return { text: `${profileInstruction}\n\n${schemaPrompt}`.trim(), placement: 'appended', token: null };
+    return { text: profileInstruction.replaceAll(token, schemaPrompt), placement: 'inserted', token };
+}
+
+export function migrateDuplicateProfileInstruction(profileInstructionInput, globalInstructionInput) {
+    const profileInstruction = String(profileInstructionInput ?? '').trim();
+    const globalInstruction = String(globalInstructionInput ?? '').trim();
+    if (!profileInstruction || !globalInstruction) return profileInstruction;
+    if (profileInstruction === globalInstruction) return '{{global_schema}}';
+    const first = profileInstruction.indexOf(globalInstruction);
+    const last = profileInstruction.lastIndexOf(globalInstruction);
+    if (first < 0 || first !== last) return profileInstruction;
+    return `${profileInstruction.slice(0, first)}{{global_schema}}${profileInstruction.slice(first + globalInstruction.length)}`.trim();
+}
+
 export function buildInstruction(settingsInput, instructionPrompt = '') {
     const settings = normalizeSettings(settingsInput);
-    const perProfileInstruction = String(instructionPrompt ?? '').trim();
-    const applyProfileTemplate = schemaPrompt => {
-        if (!perProfileInstruction) return schemaPrompt;
-        const template = perProfileInstruction.includes('{{schemaprompt}}')
-            ? perProfileInstruction
-            : `${perProfileInstruction}\n\n{{schemaprompt}}`;
-        return template.replaceAll('{{schemaprompt}}', schemaPrompt);
-    };
+    const applyProfileTemplate = schemaPrompt => composeInstruction(schemaPrompt, instructionPrompt).text;
     if (settings.useCustomInstruction && String(settings.customInstruction).trim()) {
         return applyProfileTemplate(String(settings.customInstruction).trim());
     }

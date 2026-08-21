@@ -3,6 +3,7 @@ import {
     PARAM_ORDER,
     PLUGIN_SUPPORTED_PARAMS,
     buildInstruction,
+    composeInstruction,
     normalizeRequest,
     normalizeSettings,
     parseMessage,
@@ -11,7 +12,9 @@ import {
 } from './parser.js';
 import {
     formatEffectiveRequest,
+    getImagePin,
     parseStoredImageRequest,
+    setImagePin,
     withFreshSeed,
     withRefreshToken,
 } from './image-ui.js';
@@ -54,6 +57,9 @@ export const ROUTES = Object.freeze({
     cacheClear: `${PLUGIN_BASE}/cache/clear`,
     outputsStats: `${PLUGIN_BASE}/outputs/stats`,
     outputsClear: `${PLUGIN_BASE}/outputs/clear`,
+    outputsResolve: `${PLUGIN_BASE}/outputs/resolve`,
+    outputsRegenerate: `${PLUGIN_BASE}/outputs/regenerate`,
+    output: `${PLUGIN_BASE}/outputs/`,
     providerConfig: `${PLUGIN_BASE}${PROVIDER_ROUTE_PATHS.config}`,
     providerProfileSave: `${PLUGIN_BASE}${PROVIDER_ROUTE_PATHS.profileSave}`,
     providerProfileDelete: `${PLUGIN_BASE}${PROVIDER_ROUTE_PATHS.profileDelete}`,
@@ -151,7 +157,21 @@ function prepareMessageProjection(messageId) {
     if (!settings.enabled) return { text: source, occurrences: [] };
     // Formatting receives a harmless placeholder so inserting the projected
     // markup cannot race a direct <img> request against the status-aware fetch.
-    return projectSchemas(source, settings, { urlForRequest: () => PROJECTED_IMAGE_PLACEHOLDER });
+    const projection = projectSchemas(source, settings, { urlForRequest: () => PROJECTED_IMAGE_PLACEHOLDER });
+    // Stable occurrence keys are derived from pinned request snapshots so
+    // changing current defaults cannot force an already-pinned DOM replacement.
+    projection.occurrences.forEach((occurrence, index) => {
+        const pin = getImagePin(message, index);
+        if (!pin?.request || !occurrence.key) return;
+        const previousKey = occurrence.key;
+        occurrence.request = structuredClone(pin.request);
+        occurrence.key = `output-${pin.outputId}`;
+        projection.text = projection.text.replace(
+            `data-image-schema-key="${previousKey}"`,
+            `data-image-schema-key="${occurrence.key}"`,
+        );
+    });
+    return projection;
 }
 
 async function pluginFetch(route, options = {}) {
@@ -288,6 +308,34 @@ function showRequestInspector(request) {
     }
 }
 
+function outputUrl(outputId) {
+    return `${ROUTES.output}${encodeURIComponent(outputId)}`;
+}
+
+async function resolveOutput(request, { regenerate = false } = {}) {
+    return pluginFetch(regenerate ? ROUTES.outputsRegenerate : ROUTES.outputsResolve, {
+        method: 'POST',
+        body: JSON.stringify(pluginRequestBody(request)),
+    });
+}
+
+async function persistImagePin(image, request, resolution) {
+    const messageId = Number(image.dataset.imageSchemaMessage);
+    const occurrence = Number(image.dataset.imageSchemaOccurrence);
+    const message = context.chat?.[messageId];
+    if (!message || !Number.isInteger(occurrence)) throw new Error('The source message is unavailable.');
+    const pin = {
+        outputId: resolution.outputId,
+        request: structuredClone(request),
+        metadata: resolution.metadata ?? {},
+        pinnedAt: new Date().toISOString(),
+    };
+    setImagePin(message, occurrence, pin);
+    await context.saveChat();
+    image.dataset.imageSchemaOutputId = resolution.outputId;
+    return pin;
+}
+
 async function persistImageRequest(image, request) {
     const messageId = Number(image.dataset.imageSchemaMessage);
     const occurrence = Number(image.dataset.imageSchemaOccurrence);
@@ -319,17 +367,25 @@ async function regenerateImage(reference, onUpdated, { freshSeed = false } = {})
             return null;
         }
     }
-    const nextSource = withRefreshToken(pluginImageUrl(next));
     const state = image.closest('.image-schema-frame')?.querySelector('.image-schema-state');
     image.classList.remove('image-schema-loaded', 'image-schema-failed');
     image.removeAttribute('title');
     image.alt = request.text;
     image.dataset.imageSchemaRequest = JSON.stringify(next);
-    void loadImageResource(image, nextSource, state).then(result => {
-        if (result) onUpdated?.({ image, request: next, source: result.source, result });
-    });
     if (state) state.textContent = freshSeed ? 'Generating image with a new seed…' : 'Regenerating image with the existing seed…';
-    return next;
+    try {
+        const resolution = await resolveOutput(next, { regenerate: true });
+        await persistImagePin(image, next, resolution);
+        const result = await loadImageResource(image, withRefreshToken(outputUrl(resolution.outputId)), state);
+        if (result) onUpdated?.({ image, request: next, source: result.source, result, resolution });
+        return next;
+    } catch (error) {
+        image.dataset.imageError = error.message.includes('output_not_found') ? 'output_not_found' : 'request_failed';
+        image.classList.add('image-schema-failed');
+        if (state) state.textContent = `Image regeneration failed: ${error.message}`;
+        notify('error', error.message);
+        return null;
+    }
 }
 
 function settledImageStatus(image) {
@@ -337,9 +393,11 @@ function settledImageStatus(image) {
         return `${imageFailureLabel(image)} · ${image.dataset.imageError}${image.dataset.imageProfile ? ` · ${image.dataset.imageProfile}` : ''}`;
     }
     const usedFallback = image.dataset.imageFallbackReason && image.dataset.imageProfile !== image.dataset.imageRequestedProfile;
-    return usedFallback
+    const status = usedFallback
         ? `Loaded · ${image.dataset.imageCache || 'MISS'} · fallback ${image.dataset.imageProfile} (${image.dataset.imageFallbackReason})`
         : ['Loaded', image.dataset.imageCache, image.dataset.imageProfile].filter(Boolean).join(' · ');
+    const output = image.dataset.imageSchemaOutputId ? `Output ${image.dataset.imageSchemaOutputId.slice(0, 12)}` : '';
+    return [status, output].filter(Boolean).join(' · ');
 }
 
 function openImageLightbox(reference) {
@@ -661,13 +719,32 @@ function rewriteImages(root, occurrences, messageId) {
             && image.dataset.imageSchemaMessage === String(messageId)
             && image.dataset.imageSchemaOccurrence === String(occurrenceNumber);
         const currentRequest = sameRenderedOccurrence ? parseStoredImageRequest(image.dataset.imageSchemaRequest) : null;
-        const effectiveRequest = currentRequest || match.request;
-        const source = pluginImageUrl(effectiveRequest);
+        const message = context.chat?.[Number(messageId)];
+        const pin = getImagePin(message, occurrenceNumber);
+        // Once pinned, both request identity and exact bytes are immutable. Current
+        // global/profile/model/workflow settings only affect unpinned images.
+        const effectiveRequest = pin?.request || currentRequest || match.request;
+        const source = pin ? outputUrl(pin.outputId) : pluginImageUrl(effectiveRequest);
         if (!sameRenderedOccurrence) image.removeAttribute('src');
         addImageControls(image, effectiveRequest, messageId, occurrenceNumber);
+        if (pin) image.dataset.imageSchemaOutputId = pin.outputId;
         if (!sameRenderedOccurrence) {
             const state = image.closest('.image-schema-frame')?.querySelector('.image-schema-state');
-            void loadImageResource(image, source, state);
+            if (pin) {
+                void loadImageResource(image, source, state);
+            } else {
+                // First view resolves/generates once, persists the immutable ID,
+                // then loads exact bytes. Reloads never re-resolve a pinned image.
+                void resolveOutput(effectiveRequest).then(async resolution => {
+                    await persistImagePin(image, effectiveRequest, resolution);
+                    return loadImageResource(image, outputUrl(resolution.outputId), state);
+                }).catch(error => {
+                    image.dataset.imageError = error.message.includes('output_not_found') ? 'output_not_found' : 'request_failed';
+                    image.classList.add('image-schema-failed');
+                    image.removeAttribute('src');
+                    if (state) state.textContent = `Image resolution failed: ${error.message}`;
+                });
+            }
         }
         occurrenceNumber++;
     }
@@ -749,8 +826,19 @@ function disarmPrompt() {
     promptIsArmed = false;
 }
 
+function instructionProfile() {
+    const editingName = value('image_schema_provider_profile');
+    return providerConfig.profiles.find(profile => profile.name === editingName)
+        || selectInstructionProviderProfile(providerConfig, settings.defaults.backend)
+        || null;
+}
+
+function activeInstructionProfile() {
+    return selectInstructionProviderProfile(providerConfig, settings.defaults.backend) || null;
+}
+
 function activeInstructionPrompt() {
-    return selectInstructionProviderProfile(providerConfig, settings.defaults.backend)?.instructionPrompt || '';
+    return activeInstructionProfile()?.instructionPrompt || '';
 }
 
 function globalInstruction() {
@@ -759,6 +847,13 @@ function globalInstruction() {
 
 function currentInstruction() {
     return buildInstruction(settings, activeInstructionPrompt());
+}
+
+function previewInstruction() {
+    const profile = instructionProfile();
+    const global = globalInstruction();
+    const composition = composeInstruction(global, profile?.instructionPrompt || '');
+    return { ...composition, global, profileName: profile?.name || '(global only)' };
 }
 
 function registerGlobalSchemaMacro() {
@@ -792,7 +887,9 @@ function bindEvents() {
     listen(events.CHAT_LOADED, queueRenderAll);
     listen(events.MORE_MESSAGES_LOADED, queueRenderAll);
     listen(events.GENERATION_AFTER_COMMANDS, onGenerationAfterCommands);
-    listen(events.GENERATE_AFTER_DATA, disarmPrompt);
+    // GENERATE_AFTER_DATA receives the fully assembled request; defer cleanup
+    // until that event has unwound so the prompt is unquestionably captured.
+    listen(events.GENERATE_AFTER_DATA, () => queueMicrotask(disarmPrompt));
     listen(events.GENERATION_ENDED, disarmPrompt);
     listen(events.GENERATION_STOPPED, disarmPrompt);
 }
@@ -1245,6 +1342,7 @@ async function saveRouting() {
 function selectProvider() {
     const selected = providerConfig.profiles.find(profile => profile.name === value('image_schema_provider_profile'));
     if (selected) populateProviderEditor(selected);
+    refreshInstructionPreview();
 }
 
 function addProvider() {
@@ -1350,8 +1448,14 @@ async function testProvider() {
 }
 
 function refreshInstructionPreview() {
+    const preview = previewInstruction();
     const output = document.getElementById('image_schema_instruction_preview');
-    if (output) output.textContent = currentInstruction();
+    if (output) output.textContent = preview.text;
+    setText('image_schema_instruction_preview_profile', `Instruction shown for: ${preview.profileName}`);
+    setText('image_schema_instruction_preview_placement', preview.placement === 'inserted'
+        ? `Global schema inserted at ${preview.token}`
+        : preview.placement === 'appended' ? 'Global schema automatically appended' : 'Global schema only');
+    setText('image_schema_instruction_preview_size', `${preview.text.length.toLocaleString()} characters`);
     document.querySelectorAll('[data-image-schema-panel]').forEach(panel => {
         panel.classList.toggle('displayNone', panel.getAttribute('data-image-schema-panel') !== settings.schema);
     });
@@ -1415,7 +1519,7 @@ function populateSettingsForm() {
 }
 
 async function copyInstruction() {
-    await navigator.clipboard.writeText(currentInstruction());
+    await navigator.clipboard.writeText(previewInstruction().text);
     notify('success', 'Instruction copied.');
 }
 

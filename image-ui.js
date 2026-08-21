@@ -41,6 +41,39 @@ export function parseStoredImageRequest(serialized) {
     }
 }
 
+export function activeSwipeKey(message) {
+    return typeof message?.swipe_id === 'number' ? `swipe:${message.swipe_id}` : 'message';
+}
+
+export function readImagePins(message) {
+    const value = message?.extra?.image_schema_outputs;
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+
+export function getImagePin(message, occurrence) {
+    const pins = readImagePins(message);
+    const entries = pins[activeSwipeKey(message)];
+    const pin = Array.isArray(entries) ? entries[Number(occurrence)] : null;
+    if (!pin || typeof pin !== 'object' || typeof pin.outputId !== 'string' || !pin.outputId) return null;
+    return pin;
+}
+
+export function setImagePin(message, occurrence, pin) {
+    if (!message || !Number.isInteger(Number(occurrence)) || !pin?.outputId) throw new Error('invalid image output pin');
+    message.extra ??= {};
+    const pins = structuredClone(readImagePins(message));
+    const key = activeSwipeKey(message);
+    const entries = Array.isArray(pins[key]) ? [...pins[key]] : [];
+    entries[Number(occurrence)] = structuredClone(pin);
+    pins[key] = entries;
+    message.extra.image_schema_outputs = pins;
+    if (typeof message.swipe_id === 'number' && Array.isArray(message.swipe_info) && message.swipe_info[message.swipe_id]) {
+        message.swipe_info[message.swipe_id].extra ??= {};
+        message.swipe_info[message.swipe_id].extra.image_schema_outputs = structuredClone(pins);
+    }
+    return pin;
+}
+
 /**
  * Add a cache-busting query parameter while preserving an existing query.
  *
