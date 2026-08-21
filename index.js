@@ -49,6 +49,7 @@ const PROMPT_KEY = 'image-schema-instruction';
 const GLOBAL_SCHEMA_MACRO = 'globalschemaprompt';
 const PLUGIN_BASE = '/api/plugins/image-schema';
 const PROJECTED_IMAGE_PLACEHOLDER = 'data:image/gif;base64,R0lGODlhAQABAAAAACw=';
+const EXPECTED_SERVER_VERSION = '1.3.0';
 export const ROUTES = Object.freeze({
     status: `${PLUGIN_BASE}/status`,
     test: `${PLUGIN_BASE}/test`,
@@ -1533,8 +1534,12 @@ async function checkPluginStatus() {
     try {
         const result = await pluginFetch(ROUTES.status);
         if (indicator) {
-            indicator.dataset.state = 'ok';
-            indicator.textContent = `Connected${result?.version ? ` · ${result.version}` : ''}`;
+            const mismatch = result?.version !== EXPECTED_SERVER_VERSION;
+            indicator.dataset.state = mismatch ? 'error' : 'ok';
+            indicator.textContent = mismatch
+                ? `Restart required · server ${result?.version || 'unknown'} · client ${EXPECTED_SERVER_VERSION}`
+                : `Connected · ${result.version}`;
+            indicator.title = mismatch ? 'Restart SillyTavern to activate the deployed Image Schema server.' : '';
         }
         return result;
     } catch (error) {
