@@ -1133,6 +1133,15 @@ function updateProviderPanels() {
     }
 }
 
+function updateConditionalSettings() {
+    const fallbackEnabled = checked('image_schema_fallback_enabled');
+    const injectEnabled = checked('image_schema_inject');
+    const customEnabled = checked('image_schema_custom_enabled');
+    document.getElementById('image_schema_fallback_options')?.classList.toggle('displayNone', !fallbackEnabled);
+    document.getElementById('image_schema_inject_options')?.classList.toggle('displayNone', !injectEnabled);
+    document.getElementById('image_schema_custom_instruction_field')?.classList.toggle('displayNone', !customEnabled);
+}
+
 function updateProviderSecretStatus(configured) {
     const status = document.getElementById('image_schema_provider_key_status');
     if (!status) return;
@@ -1153,7 +1162,6 @@ function populateProviderEditor(profileInput) {
     setValue('image_schema_provider_instruction', profile.instructionPrompt);
     setValue('image_schema_provider_defaults', serializeProviderDefaults(profile.defaults));
     setValue('image_schema_provider_key', '');
-    setChecked('image_schema_provider_make_default', profile.name !== '' && profile.name === providerConfig.defaultProfile);
     comfyWorkflow = profile.workflow ? structuredClone(profile.workflow) : null;
     comfyWorkflowName = profile.workflowName || (comfyWorkflow && profile.name ? `${profile.name} workflow` : '');
     resetComfyCandidates(profile.bindings);
@@ -1215,6 +1223,7 @@ function populateRoutingControls() {
     document.querySelectorAll('#image_schema_fallback_conditions input[type="checkbox"]').forEach(input => {
         input.checked = selectedCodes.has(input.value);
     });
+    updateConditionalSettings();
 }
 
 async function saveRouting() {
@@ -1257,9 +1266,6 @@ async function saveProvider() {
             method: 'POST',
             body: JSON.stringify({ profile, previousName: providerOriginalName || undefined }),
         });
-        if (checked('image_schema_provider_make_default')) {
-            await pluginFetch(ROUTES.providerDefault, { method: 'POST', body: JSON.stringify({ name: profile.name }) });
-        }
         setProviderResult(result);
         notify('success', `Provider profile “${profile.name}” saved.`);
         await refreshProviders(profile.name);
@@ -1284,7 +1290,7 @@ async function deleteProvider() {
 }
 
 async function setDefaultProvider() {
-    const name = providerOriginalName || value('image_schema_provider_name').trim();
+    const name = providerOriginalName;
     if (!name) return notify('error', 'Save or select a provider profile first.');
     try {
         const result = await pluginFetch(ROUTES.providerDefault, { method: 'POST', body: JSON.stringify({ name }) });
@@ -1377,6 +1383,7 @@ function readSettingsForm() {
         document.getElementById(`image_schema_default_${key}`)?.toggleAttribute('disabled', settings.parameterPolicies[key] === 'ignore');
     }
     saveSettings();
+    updateConditionalSettings();
     refreshInstructionPreview();
     queueRenderAll();
 }
@@ -1403,6 +1410,7 @@ function populateSettingsForm() {
         setValue(`image_schema_policy_${key}`, settings.parameterPolicies[key]);
         document.getElementById(`image_schema_default_${key}`)?.toggleAttribute('disabled', settings.parameterPolicies[key] === 'ignore');
     }
+    updateConditionalSettings();
     refreshInstructionPreview();
 }
 
@@ -1487,7 +1495,7 @@ function renderErrorStatus(result) {
     }
     document.getElementById('image_schema_copy_error')?.toggleAttribute('disabled', !latest);
     document.getElementById('image_schema_clear_errors')?.toggleAttribute('disabled', !errors.length);
-    if (errors.length) document.getElementById('image_schema_status_section')?.setAttribute('open', '');
+    if (errors.length) document.getElementById('image_schema_advanced_diagnostics')?.setAttribute('open', '');
     document.getElementById('image_schema_copy_error')?.setAttribute('data-error-text', latest ? JSON.stringify(latest, null, 2) : '');
 }
 
@@ -1555,6 +1563,7 @@ async function addSettingsUi() {
 
     root.querySelectorAll('input, select, textarea').forEach(element => {
         if (element.closest('#image_schema_provider_editor') || element.id === 'image_schema_provider_profile') return;
+        if (element.closest('#image_schema_fallback_options') || element.id === 'image_schema_fallback_enabled') return;
         if (element.id === 'image_schema_test_input' || element.id === 'image_schema_test_prompt') return;
         element.addEventListener(element instanceof HTMLSelectElement ? 'change' : 'input', readSettingsForm);
     });
@@ -1575,6 +1584,7 @@ async function addSettingsUi() {
     document.getElementById('image_schema_diagnostics_clear')?.addEventListener('click', clearPluginDiagnostics);
     document.getElementById('image_schema_provider_profile')?.addEventListener('change', selectProvider);
     document.getElementById('image_schema_provider_refresh')?.addEventListener('click', () => refreshProviders(providerOriginalName).catch(error => notify('error', error.message)));
+    document.getElementById('image_schema_fallback_enabled')?.addEventListener('change', updateConditionalSettings);
     document.getElementById('image_schema_save_routing')?.addEventListener('click', saveRouting);
     document.getElementById('image_schema_provider_add')?.addEventListener('click', addProvider);
     document.getElementById('image_schema_provider_duplicate')?.addEventListener('click', duplicateProvider);

@@ -5,208 +5,157 @@
             <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
         </div>
         <div class="inline-drawer-content image-schema-drawer-stack">
-            <details id="image_schema_status_section" class="image-schema-section image-schema-status-section" open>
-                <summary><span>Status &amp; Errors</span><span id="image_schema_status_badge" class="image-schema-summary-badge" data-state="checking">Checking</span></summary>
-                <div class="image-schema-section-body">
-                    <div class="image-schema-status-grid">
-                        <div class="image-schema-status-card"><span class="image-schema-status-label">Extension</span><strong id="image_schema_extension_status">Enabled</strong></div>
-                        <div class="image-schema-status-card"><span class="image-schema-status-label">Plugin</span><span id="image_schema_plugin_status" class="image-schema-status" data-state="checking">Not checked</span></div>
-                        <div class="image-schema-status-card"><span class="image-schema-status-label">Active profile</span><strong id="image_schema_active_profile">Not loaded</strong></div>
-                    </div>
+            <p class="image-schema-save-note"><i class="fa-solid fa-circle-check" aria-hidden="true"></i> Schema, prompt, image parameter, and diagnostic settings auto-save. Provider profiles and fallback routing save only when you use their labeled save actions.</p>
+
+            <section id="image_schema_status_section" class="image-schema-area image-schema-status-section" aria-labelledby="image_schema_status_title">
+                <div class="image-schema-area-heading image-schema-status-heading">
+                    <div><h3 id="image_schema_status_title">Status</h3><p>Extension and server-plugin availability.</p></div>
+                    <span id="image_schema_status_badge" class="image-schema-summary-badge" data-state="checking">Checking</span>
+                </div>
+                <div class="image-schema-status-line">
                     <label class="checkbox_label image-schema-enabled-control" for="image_schema_enabled"><input id="image_schema_enabled" type="checkbox"><span>Render model image schemas</span></label>
-                    <div id="image_schema_error_summary" class="image-schema-error-summary" data-state="empty" aria-live="polite">
-                        <div><strong id="image_schema_error_count">0 errors</strong><span id="image_schema_error_latest">No recent sanitized errors.</span></div>
-                    </div>
-                    <div class="image-schema-button-row image-schema-status-actions">
-                        <button id="image_schema_check_plugin" type="button" class="menu_button"><i class="fa-solid fa-plug-circle-check"></i> Check plugin</button>
-                        <button id="image_schema_retry_last_image" type="button" class="menu_button" disabled><i class="fa-solid fa-rotate-right"></i> Retry last image</button>
-                        <button id="image_schema_copy_error" type="button" class="menu_button" disabled><i class="fa-solid fa-copy"></i> Copy error</button>
-                        <button id="image_schema_clear_errors" type="button" class="menu_button redWarningBG" disabled>Clear errors</button>
-                    </div>
-                    <small>Errors and activity are sanitized by the plugin; prompts, URLs, headers, bodies, and credentials are never returned.</small>
+                    <span><span class="image-schema-status-label">Extension</span> <strong id="image_schema_extension_status">Enabled</strong></span>
+                    <span><span class="image-schema-status-label">Plugin</span> <span id="image_schema_plugin_status" class="image-schema-status" data-state="checking">Not checked</span></span>
+                    <span><span class="image-schema-status-label">Active profile</span> <strong id="image_schema_active_profile">Not loaded</strong></span>
+                    <button id="image_schema_check_plugin" type="button" class="menu_button image-schema-compact-button"><i class="fa-solid fa-plug-circle-check"></i> Check plugin</button>
                 </div>
-            </details>
+            </section>
 
-            <details class="image-schema-section">
-                <summary>Provider Profiles</summary>
-                <div class="image-schema-section-body">
-                    <div class="image-schema-provider-toolbar">
-                        <label for="image_schema_provider_profile">Active profile<select id="image_schema_provider_profile" class="text_pole"></select></label>
-                        <button id="image_schema_provider_refresh" type="button" class="menu_button image-schema-icon-button" title="Reload profiles"><i class="fa-solid fa-rotate"></i></button>
-                    </div>
-                    <div class="image-schema-button-row image-schema-secondary-actions">
-                        <button id="image_schema_provider_add" type="button" class="menu_button"><i class="fa-solid fa-plus"></i> Add</button>
-                        <button id="image_schema_provider_duplicate" type="button" class="menu_button"><i class="fa-solid fa-copy"></i> Duplicate</button>
-                        <button id="image_schema_provider_delete" type="button" class="menu_button redWarningBG"><i class="fa-solid fa-trash"></i> Delete</button>
-                    </div>
-
-                    <div id="image_schema_provider_editor" class="image-schema-provider-editor">
-                        <div class="image-schema-grid two">
-                            <label for="image_schema_provider_name">Profile name<input id="image_schema_provider_name" class="text_pole" type="text" autocomplete="off"></label>
-                            <label for="image_schema_provider_type">Provider type<select id="image_schema_provider_type" class="text_pole"><option value="openai">OpenAI-compatible</option><option value="gemini-sse">Gemini SSE</option><option value="generic">Generic HTTP</option><option value="comfyui">ComfyUI workflow</option></select></label>
-                        </div>
-
-                        <label for="image_schema_provider_url"><span id="image_schema_provider_url_label">Provider URL</span><input id="image_schema_provider_url" class="text_pole" type="url" spellcheck="false" autocomplete="off" placeholder="https://provider.example"></label>
-                        <small id="image_schema_provider_url_help" class="image-schema-field-help"></small>
-                        <div id="image_schema_provider_url_preview" class="image-schema-effective-url"></div>
-
-                        <div data-image-schema-provider-panel="generic" class="image-schema-inline-provider-control">
-                            <label for="image_schema_provider_method">HTTP method<select id="image_schema_provider_method" class="text_pole"><option value="GET">GET</option><option value="POST">POST</option></select></label>
-                        </div>
-
-                        <div class="image-schema-grid two">
-                            <label id="image_schema_provider_model_field" for="image_schema_provider_model">Default model<input id="image_schema_provider_model" class="text_pole" type="text" autocomplete="off" placeholder="gpt-image-2"></label>
-                            <label for="image_schema_provider_timeout">Timeout (ms)<input id="image_schema_provider_timeout" class="text_pole" type="number" min="1000" max="900000" step="1000"></label>
-                        </div>
-
-                        <div id="image_schema_provider_secret_panel" class="image-schema-secret-row">
-                            <span id="image_schema_provider_key_status" class="image-schema-status" data-state="checking">API key status unknown</span>
-                            <label for="image_schema_provider_key">API key<input id="image_schema_provider_key" class="text_pole" type="password" autocomplete="new-password" placeholder="Leave blank to keep saved key"></label>
-                            <div class="image-schema-button-row">
-                                <button id="image_schema_provider_key_replace" type="button" class="menu_button"><i class="fa-solid fa-key"></i> Save key</button>
-                                <button id="image_schema_provider_key_clear" type="button" class="menu_button redWarningBG">Clear</button>
-                            </div>
-                        </div>
-
-                        <section id="image_schema_provider_instruction_section" class="image-schema-provider-instruction" aria-labelledby="image_schema_provider_instruction_title">
-                            <div id="image_schema_provider_instruction_title" class="image-schema-provider-section-title">Per-profile instruction</div>
-                            <label for="image_schema_provider_instruction">Profile instruction template<textarea id="image_schema_provider_instruction" class="text_pole image-schema-textarea" rows="5" placeholder="Provider-specific guidance...&#10;&#10;{{schemaprompt}}"></textarea></label>
-                            <small><code>{{schemaprompt}}</code> expands to the complete Global Schema &amp; Prompt instruction at this exact position. Other SillyTavern macros remain untouched for normal prompt processing. If omitted, the schema prompt is appended automatically. This does not change the generated image prompt.</small>
-                        </section>
-
-                        <details id="image_schema_provider_advanced" class="image-schema-subsection">
-                            <summary>Provider advanced</summary>
-                            <div class="image-schema-subsection-body">
-                                <label for="image_schema_provider_allowed_models">Allowed model overrides<textarea id="image_schema_provider_allowed_models" class="text_pole image-schema-textarea" rows="3" placeholder="One model per line"></textarea></label>
-                                <small>Leave empty to prevent requests from selecting another model.</small>
-                                <label for="image_schema_provider_defaults">Provider defaults (JSON)<textarea id="image_schema_provider_defaults" class="text_pole image-schema-textarea image-schema-code-field" rows="5" spellcheck="false" placeholder="{}"></textarea></label>
-                            </div>
-                        </details>
-
-                        <label class="checkbox_label" for="image_schema_provider_make_default"><input id="image_schema_provider_make_default" type="checkbox"><span>Make default when saved</span></label>
-                        <div class="image-schema-button-row image-schema-primary-actions">
-                            <button id="image_schema_provider_save" type="button" class="menu_button"><i class="fa-solid fa-floppy-disk"></i> Save</button>
-                            <button id="image_schema_provider_test" type="button" class="menu_button"><i class="fa-solid fa-vial"></i> Test</button>
-                            <button id="image_schema_provider_set_default" type="button" class="menu_button">Set default</button>
-                        </div>
-                        <div id="image_schema_provider_result" class="image-schema-operation-result" aria-live="polite"></div>
-                    </div>
+            <section class="image-schema-area" aria-labelledby="image_schema_providers_title">
+                <div class="image-schema-area-heading"><div><h3 id="image_schema_providers_title">Providers &amp; Routing</h3><p>Edit a provider profile, then choose how generation failures route.</p></div></div>
+                <div class="image-schema-provider-toolbar">
+                    <label for="image_schema_provider_profile">Profile to edit<select id="image_schema_provider_profile" class="text_pole"></select></label>
+                    <button id="image_schema_provider_refresh" type="button" class="menu_button image-schema-icon-button" title="Reload profiles" aria-label="Reload provider profiles"><i class="fa-solid fa-rotate"></i></button>
                 </div>
-            </details>
+                <div class="image-schema-button-row image-schema-secondary-actions">
+                    <button id="image_schema_provider_add" type="button" class="menu_button"><i class="fa-solid fa-plus"></i> Add profile</button>
+                    <button id="image_schema_provider_duplicate" type="button" class="menu_button"><i class="fa-solid fa-copy"></i> Duplicate profile</button>
+                    <button id="image_schema_provider_delete" type="button" class="menu_button redWarningBG"><i class="fa-solid fa-trash"></i> Delete profile</button>
+                </div>
 
-            <details class="image-schema-section image-schema-routing-section">
-                <summary>Generation Routing</summary>
-                <div class="image-schema-section-body">
-                    <small>If the selected/default provider fails for a checked reason, Image Schema tries the fallback once. Rejected prompts and invalid settings are not included by default.</small>
-                    <label class="checkbox_label" for="image_schema_fallback_enabled"><input id="image_schema_fallback_enabled" type="checkbox"><span>Enable fallback profile</span></label>
+                <div id="image_schema_provider_editor" class="image-schema-provider-editor">
+                    <div class="image-schema-grid two">
+                        <label for="image_schema_provider_name">Profile name<input id="image_schema_provider_name" class="text_pole" type="text" autocomplete="off"></label>
+                        <label for="image_schema_provider_type">Provider type<select id="image_schema_provider_type" class="text_pole"><option value="openai">OpenAI-compatible</option><option value="gemini-sse">Gemini SSE</option><option value="generic">Generic HTTP</option><option value="comfyui">ComfyUI workflow</option></select></label>
+                    </div>
+                    <label for="image_schema_provider_url"><span id="image_schema_provider_url_label">Provider URL</span><input id="image_schema_provider_url" class="text_pole" type="url" spellcheck="false" autocomplete="off" placeholder="https://provider.example"></label>
+                    <small id="image_schema_provider_url_help" class="image-schema-field-help"></small>
+                    <div id="image_schema_provider_url_preview" class="image-schema-effective-url"></div>
+                    <div data-image-schema-provider-panel="generic" class="image-schema-inline-provider-control"><label for="image_schema_provider_method">HTTP method<select id="image_schema_provider_method" class="text_pole"><option value="GET">GET</option><option value="POST">POST</option></select></label></div>
+                    <div class="image-schema-grid two">
+                        <label id="image_schema_provider_model_field" for="image_schema_provider_model">Default model<input id="image_schema_provider_model" class="text_pole" type="text" autocomplete="off" placeholder="gpt-image-2"></label>
+                        <label for="image_schema_provider_timeout">Request timeout (milliseconds)<input id="image_schema_provider_timeout" class="text_pole" type="number" min="1000" max="900000" step="1000"></label>
+                    </div>
+                    <div id="image_schema_provider_secret_panel" class="image-schema-secret-row">
+                        <span id="image_schema_provider_key_status" class="image-schema-status" data-state="checking">API key status unknown</span>
+                        <label for="image_schema_provider_key">API key<input id="image_schema_provider_key" class="text_pole" type="password" autocomplete="new-password" placeholder="Leave blank to keep saved key"></label>
+                        <div class="image-schema-button-row"><button id="image_schema_provider_key_replace" type="button" class="menu_button"><i class="fa-solid fa-key"></i> Save key</button><button id="image_schema_provider_key_clear" type="button" class="menu_button redWarningBG">Clear key</button></div>
+                    </div>
+                    <section id="image_schema_provider_instruction_section" class="image-schema-provider-instruction" aria-labelledby="image_schema_provider_instruction_title">
+                        <div id="image_schema_provider_instruction_title" class="image-schema-provider-section-title">Profile instruction</div>
+                        <label for="image_schema_provider_instruction">Provider-specific schema guidance<textarea id="image_schema_provider_instruction" class="text_pole image-schema-textarea" rows="5" placeholder="Additional guidance for this profile...&#10;&#10;{{global_schema}}"></textarea></label>
+                        <small><code>{{global_schema}}</code> inserts the global Schema &amp; Prompt instruction here. Legacy <code>{{schemaprompt}}</code> remains supported. If omitted, the global instruction is appended exactly once.</small>
+                    </section>
+
+                    <div id="image_schema_comfy_section" class="image-schema-comfy-panel displayNone" data-image-schema-provider-panel="comfyui" aria-labelledby="image_schema_comfy_title">
+                        <h4 id="image_schema_comfy_title">ComfyUI workflow &amp; bindings</h4>
+                        <div class="image-schema-comfy-upload-row">
+                            <input id="image_schema_comfy_workflow_file" class="displayNone" type="file" accept="application/json,.json">
+                            <button id="image_schema_comfy_workflow_choose" type="button" class="menu_button"><i class="fa-solid fa-file-arrow-up"></i> Upload or replace API workflow</button>
+                            <button id="image_schema_comfy_workflow_clear" type="button" class="menu_button redWarningBG">Remove workflow</button>
+                        </div>
+                        <div id="image_schema_comfy_workflow_status" class="image-schema-comfy-status" data-state="empty">No workflow loaded.</div>
+                        <small>Export ComfyUI in API format. The file is parsed locally and included only in Analyze and Save profile requests.</small>
+                        <button id="image_schema_comfy_analyze" type="button" class="menu_button image-schema-comfy-analyze"><i class="fa-solid fa-magnifying-glass"></i> Analyze workflow</button>
+                        <div class="image-schema-grid two image-schema-comfy-bindings">
+                            <div class="image-schema-comfy-binding"><label for="image_schema_comfy_binding_positive">Positive prompt <span class="image-schema-required">required</span></label><div class="image-schema-comfy-binding-control"><select id="image_schema_comfy_binding_positive" class="text_pole"></select><button id="image_schema_comfy_binding_positive_browse" type="button" class="menu_button">Browse</button></div><small id="image_schema_comfy_binding_positive_help" class="image-schema-comfy-binding-help"></small></div>
+                            <div class="image-schema-comfy-binding"><label for="image_schema_comfy_binding_negative">Negative prompt</label><div class="image-schema-comfy-binding-control"><select id="image_schema_comfy_binding_negative" class="text_pole"></select><button id="image_schema_comfy_binding_negative_browse" type="button" class="menu_button">Browse</button></div><small id="image_schema_comfy_binding_negative_help" class="image-schema-comfy-binding-help"></small></div>
+                            <div class="image-schema-comfy-binding"><label for="image_schema_comfy_binding_seed">Seed</label><div class="image-schema-comfy-binding-control"><select id="image_schema_comfy_binding_seed" class="text_pole"></select><button id="image_schema_comfy_binding_seed_browse" type="button" class="menu_button">Browse</button></div><small id="image_schema_comfy_binding_seed_help" class="image-schema-comfy-binding-help"></small></div>
+                            <div class="image-schema-comfy-binding"><label for="image_schema_comfy_binding_width">Width</label><div class="image-schema-comfy-binding-control"><select id="image_schema_comfy_binding_width" class="text_pole"></select><button id="image_schema_comfy_binding_width_browse" type="button" class="menu_button">Browse</button></div><small id="image_schema_comfy_binding_width_help" class="image-schema-comfy-binding-help"></small></div>
+                            <div class="image-schema-comfy-binding"><label for="image_schema_comfy_binding_height">Height</label><div class="image-schema-comfy-binding-control"><select id="image_schema_comfy_binding_height" class="text_pole"></select><button id="image_schema_comfy_binding_height_browse" type="button" class="menu_button">Browse</button></div><small id="image_schema_comfy_binding_height_help" class="image-schema-comfy-binding-help"></small></div>
+                            <div class="image-schema-comfy-binding"><label for="image_schema_comfy_binding_output">Output node</label><div class="image-schema-comfy-binding-control"><select id="image_schema_comfy_binding_output" class="text_pole"></select><button id="image_schema_comfy_binding_output_browse" type="button" class="menu_button">Browse</button></div><small id="image_schema_comfy_binding_output_help" class="image-schema-comfy-binding-help"></small></div>
+                        </div>
+                        <div id="image_schema_comfy_validation" class="image-schema-operation-result" aria-live="polite">Load and analyze an API workflow to configure bindings.</div>
+                    </div>
+
+                    <details id="image_schema_provider_advanced" class="image-schema-disclosure">
+                        <summary>Advanced provider options</summary>
+                        <div class="image-schema-disclosure-body">
+                            <label for="image_schema_provider_allowed_models">Allowed model overrides<textarea id="image_schema_provider_allowed_models" class="text_pole image-schema-textarea" rows="3" placeholder="One model per line"></textarea></label>
+                            <small>Leave empty to prevent requests from selecting another model.</small>
+                            <label for="image_schema_provider_defaults">Provider defaults (JSON)<textarea id="image_schema_provider_defaults" class="text_pole image-schema-textarea image-schema-code-field" rows="5" spellcheck="false" placeholder="{}"></textarea></label>
+                        </div>
+                    </details>
+                    <div class="image-schema-button-row image-schema-primary-actions">
+                        <button id="image_schema_provider_save" type="button" class="menu_button"><i class="fa-solid fa-floppy-disk"></i> Save profile</button>
+                        <button id="image_schema_provider_test" type="button" class="menu_button"><i class="fa-solid fa-vial"></i> Test provider</button>
+                        <button id="image_schema_provider_set_default" type="button" class="menu_button">Set Default</button>
+                    </div>
+                    <div id="image_schema_provider_result" class="image-schema-operation-result" aria-live="polite"></div>
+                </div>
+
+                <div class="image-schema-divider-heading"><h4>Fallback routing</h4><p>Try one fallback profile when the active provider fails for selected reasons.</p></div>
+                <label class="checkbox_label" for="image_schema_fallback_enabled"><input id="image_schema_fallback_enabled" type="checkbox"><span>Enable fallback profile</span></label>
+                <div id="image_schema_fallback_options" class="image-schema-conditional displayNone">
                     <label for="image_schema_fallback_profile">Fallback profile<select id="image_schema_fallback_profile" class="text_pole"><option value="">Choose a profile</option></select></label>
-                    <div id="image_schema_fallback_conditions" class="image-schema-routing-conditions">
-                        <label class="checkbox_label"><input type="checkbox" value="connection_error"><span>Connection errors</span></label>
-                        <label class="checkbox_label"><input type="checkbox" value="timeout"><span>Timeouts</span></label>
-                        <label class="checkbox_label"><input type="checkbox" value="rate_limit"><span>Rate limits</span></label>
-                        <label class="checkbox_label"><input type="checkbox" value="upstream_error"><span>Provider/server errors</span></label>
-                        <label class="checkbox_label"><input type="checkbox" value="invalid_upstream_response"><span>Empty or invalid images</span></label>
-                        <label class="checkbox_label"><input type="checkbox" value="response_too_large"><span>Oversized responses</span></label>
-                        <label class="checkbox_label"><input type="checkbox" value="safety"><span>Rejected prompt / safety (advanced)</span></label>
-                    </div>
+                    <fieldset class="image-schema-fieldset"><legend>Fallback conditions</legend><div id="image_schema_fallback_conditions" class="image-schema-routing-conditions">
+                        <label class="checkbox_label"><input type="checkbox" value="connection_error"><span>Connection errors</span></label><label class="checkbox_label"><input type="checkbox" value="timeout"><span>Timeouts</span></label><label class="checkbox_label"><input type="checkbox" value="rate_limit"><span>Rate limits</span></label><label class="checkbox_label"><input type="checkbox" value="upstream_error"><span>Provider/server errors</span></label><label class="checkbox_label"><input type="checkbox" value="invalid_upstream_response"><span>Empty or invalid images</span></label><label class="checkbox_label"><input type="checkbox" value="response_too_large"><span>Oversized responses</span></label><label class="checkbox_label"><input type="checkbox" value="safety"><span>Rejected prompt / safety (advanced)</span></label>
+                    </div></fieldset>
                     <button id="image_schema_save_routing" type="button" class="menu_button"><i class="fa-solid fa-route"></i> Save routing</button>
                 </div>
-            </details>
+            </section>
 
-            <details class="image-schema-section image-schema-global-options">
-                <summary>Global Options</summary>
-                <div class="image-schema-section-body">
-                    <details class="image-schema-subsection image-schema-light-details">
-                        <summary>Global Schema &amp; Prompt</summary>
-                        <div class="image-schema-subsection-body">
-                            <label for="image_schema_mode">Model-facing schema<select id="image_schema_mode" class="text_pole"><option value="inline">Inline &lt;img src=&quot;/image/â€¦&quot;&gt;</option><option value="delimiter">Delimited prompt</option><option value="json">JSON wrapper</option></select></label>
-                            <div data-image-schema-panel="inline" class="image-schema-panel"><label for="image_schema_virtual_path">Virtual base path<input id="image_schema_virtual_path" class="text_pole" type="text" spellcheck="false" placeholder="/image/"></label></div>
-                            <div data-image-schema-panel="delimiter" class="image-schema-panel"><div class="image-schema-grid two"><label>Opening delimiter<input id="image_schema_delimiter_open" class="text_pole" type="text" spellcheck="false"></label><label>Closing delimiter<input id="image_schema_delimiter_close" class="text_pole" type="text" spellcheck="false"></label></div></div>
-                            <div data-image-schema-panel="json" class="image-schema-panel"><div class="image-schema-grid two"><label>Opening wrapper<input id="image_schema_json_open" class="text_pole" type="text" spellcheck="false"></label><label>Closing wrapper<input id="image_schema_json_close" class="text_pole" type="text" spellcheck="false"></label><label>Text property<input id="image_schema_json_text" class="text_pole" type="text" spellcheck="false"></label><label>Params property<input id="image_schema_json_params" class="text_pole" type="text" spellcheck="false"></label></div></div>
-                            <hr>
-                            <label class="checkbox_label" for="image_schema_inject"><input id="image_schema_inject" type="checkbox"><span>Inject schema instruction into normal generations</span></label>
-                            <label class="checkbox_label" for="image_schema_inject_quiet"><input id="image_schema_inject_quiet" type="checkbox"><span>Also inject into quiet/automatic generations</span></label>
-                            <label class="checkbox_label" for="image_schema_custom_enabled"><input id="image_schema_custom_enabled" type="checkbox"><span>Use a custom instruction</span></label>
-                            <textarea id="image_schema_custom_instruction" class="text_pole image-schema-textarea" rows="4" placeholder="Optional custom instruction"></textarea>
-                            <details class="image-schema-subsection"><summary>Instruction preview</summary><div class="image-schema-subsection-body"><pre id="image_schema_instruction_preview" class="image-schema-output"></pre><button id="image_schema_copy_instruction" type="button" class="menu_button"><i class="fa-solid fa-copy"></i> Copy</button></div></details>
-                        </div>
-                    </details>
-
-                    <details class="image-schema-subsection image-schema-light-details">
-                        <summary>Image Parameters</summary>
-                        <div class="image-schema-subsection-body">
-                            <small><b>Ignore</b> omits the parameter entirely, <b>Fixed</b> applies the configured value without exposing it, and <b>Model may override</b> advertises it in the schema instruction and uses the configured value as fallback.</small>
-                            <div class="image-schema-params">
-                                <div class="image-schema-param"><label>Backend/profile<input id="image_schema_default_backend" class="text_pole" type="text"></label><label>Policy<select id="image_schema_policy_backend" class="text_pole image-schema-policy"><option value="ignore">Ignore</option><option value="fixed">Fixed</option><option value="allow">Model may override</option></select></label></div>
-                                <div class="image-schema-param"><label>Model<input id="image_schema_default_model" class="text_pole" type="text"></label><label>Policy<select id="image_schema_policy_model" class="text_pole image-schema-policy"><option value="ignore">Ignore</option><option value="fixed">Fixed</option><option value="allow">Model may override</option></select></label></div>
-                                <div class="image-schema-param"><label>Seed<input id="image_schema_default_seed" class="text_pole" type="number" min="0" step="1"></label><label>Policy<select id="image_schema_policy_seed" class="text_pole image-schema-policy"><option value="ignore">Ignore</option><option value="fixed">Fixed</option><option value="allow">Model may override</option></select></label></div>
-                                <div class="image-schema-param"><label>Aspect ratio<input id="image_schema_default_aspect_ratio" class="text_pole" type="text" placeholder="3:4"></label><label>Policy<select id="image_schema_policy_aspect_ratio" class="text_pole image-schema-policy"><option value="ignore">Ignore</option><option value="fixed">Fixed</option><option value="allow">Model may override</option></select></label></div>
-                                <div class="image-schema-param"><label>Image size<input id="image_schema_default_image_size" class="text_pole" type="text" placeholder="1K"></label><label>Policy<select id="image_schema_policy_image_size" class="text_pole image-schema-policy"><option value="ignore">Ignore</option><option value="fixed">Fixed</option><option value="allow">Model may override</option></select></label></div>
-                                <div class="image-schema-param"><label>Output format<input id="image_schema_default_output_format" class="text_pole" type="text" placeholder="image/png"></label><label>Policy<select id="image_schema_policy_output_format" class="text_pole image-schema-policy"><option value="ignore">Ignore</option><option value="fixed">Fixed</option><option value="allow">Model may override</option></select></label></div>
-                                <div class="image-schema-param"><label>Temperature<input id="image_schema_default_temperature" class="text_pole" type="number" min="0" max="2" step="0.1"></label><label>Policy<select id="image_schema_policy_temperature" class="text_pole image-schema-policy"><option value="ignore">Ignore</option><option value="fixed">Fixed</option><option value="allow">Model may override</option></select></label></div>
-                                <div class="image-schema-param"><label>Person generation<input id="image_schema_default_person_generation" class="text_pole" type="text"></label><label>Policy<select id="image_schema_policy_person_generation" class="text_pole image-schema-policy"><option value="ignore">Ignore</option><option value="fixed">Fixed</option><option value="allow">Model may override</option></select></label></div>
-                                <div class="image-schema-param"><label>Width<input id="image_schema_default_width" class="text_pole" type="number" min="1" step="1"></label><label>Policy<select id="image_schema_policy_width" class="text_pole image-schema-policy"><option value="ignore">Ignore</option><option value="fixed">Fixed</option><option value="allow">Model may override</option></select></label></div>
-                                <div class="image-schema-param"><label>Height<input id="image_schema_default_height" class="text_pole" type="number" min="1" step="1"></label><label>Policy<select id="image_schema_policy_height" class="text_pole image-schema-policy"><option value="ignore">Ignore</option><option value="fixed">Fixed</option><option value="allow">Model may override</option></select></label></div>
-                                <div class="image-schema-param wide"><label>Negative prompt<input id="image_schema_default_negative" class="text_pole" type="text"></label><label>Policy<select id="image_schema_policy_negative" class="text_pole image-schema-policy"><option value="ignore">Ignore</option><option value="fixed">Fixed</option><option value="allow">Model may override</option></select></label></div>
-                            </div>
-                        </div>
-                    </details>
+            <section class="image-schema-area" aria-labelledby="image_schema_prompt_title">
+                <div class="image-schema-area-heading"><div><h3 id="image_schema_prompt_title">Schema &amp; Prompt</h3><p>Control the model-facing image syntax and instruction injection. Changes auto-save.</p></div></div>
+                <label for="image_schema_mode">Model-facing schema<select id="image_schema_mode" class="text_pole"><option value="inline">Inline &lt;img src=&quot;/image/…&quot;&gt;</option><option value="delimiter">Delimited prompt</option><option value="json">JSON wrapper</option></select></label>
+                <div data-image-schema-panel="inline" class="image-schema-panel"><label for="image_schema_virtual_path">Virtual base path<input id="image_schema_virtual_path" class="text_pole" type="text" spellcheck="false" placeholder="/image/"></label></div>
+                <div data-image-schema-panel="delimiter" class="image-schema-panel"><div class="image-schema-grid two"><label for="image_schema_delimiter_open">Opening delimiter<input id="image_schema_delimiter_open" class="text_pole" type="text" spellcheck="false"></label><label for="image_schema_delimiter_close">Closing delimiter<input id="image_schema_delimiter_close" class="text_pole" type="text" spellcheck="false"></label></div></div>
+                <div data-image-schema-panel="json" class="image-schema-panel"><div class="image-schema-grid two"><label for="image_schema_json_open">Opening wrapper<input id="image_schema_json_open" class="text_pole" type="text" spellcheck="false"></label><label for="image_schema_json_close">Closing wrapper<input id="image_schema_json_close" class="text_pole" type="text" spellcheck="false"></label><label for="image_schema_json_text">Text property<input id="image_schema_json_text" class="text_pole" type="text" spellcheck="false"></label><label for="image_schema_json_params">Parameters property<input id="image_schema_json_params" class="text_pole" type="text" spellcheck="false"></label></div></div>
+                <div class="image-schema-toggle-stack">
+                    <label class="checkbox_label" for="image_schema_inject"><input id="image_schema_inject" type="checkbox"><span>Inject schema instruction into normal generations</span></label>
+                    <div id="image_schema_inject_options" class="image-schema-conditional displayNone"><label class="checkbox_label" for="image_schema_inject_quiet"><input id="image_schema_inject_quiet" type="checkbox"><span>Also inject into quiet and automatic generations</span></label></div>
+                    <label class="checkbox_label" for="image_schema_custom_enabled"><input id="image_schema_custom_enabled" type="checkbox"><span>Use a custom instruction</span></label>
+                    <div id="image_schema_custom_instruction_field" class="image-schema-conditional displayNone"><label for="image_schema_custom_instruction">Custom schema instruction<textarea id="image_schema_custom_instruction" class="text_pole image-schema-textarea" rows="4" placeholder="Write the model-facing image instruction"></textarea></label></div>
                 </div>
-            </details>
+            </section>
 
-            <details id="image_schema_comfy_section" class="image-schema-section image-schema-comfy-panel" data-image-schema-provider-panel="comfyui">
-                <summary>ComfyUI Workflow Bindings</summary>
-                <div class="image-schema-section-body">
-                    <div class="image-schema-comfy-upload-row">
-                        <input id="image_schema_comfy_workflow_file" class="displayNone" type="file" accept="application/json,.json">
-                        <button id="image_schema_comfy_workflow_choose" type="button" class="menu_button"><i class="fa-solid fa-file-arrow-up"></i> Upload / replace API workflow</button>
-                        <button id="image_schema_comfy_workflow_clear" type="button" class="menu_button redWarningBG">Remove</button>
+            <section class="image-schema-area" aria-labelledby="image_schema_parameters_title">
+                <div class="image-schema-area-heading"><div><h3 id="image_schema_parameters_title">Image Parameters</h3><p>Ignore omits a parameter, Fixed applies it silently, and Model may override exposes it in the schema. Changes auto-save.</p></div></div>
+                <div class="image-schema-params">
+                    <div class="image-schema-param"><label for="image_schema_default_backend">Backend / profile<input id="image_schema_default_backend" class="text_pole" type="text"></label><label for="image_schema_policy_backend">Backend policy<select id="image_schema_policy_backend" class="text_pole image-schema-policy"><option value="ignore">Ignore</option><option value="fixed">Fixed</option><option value="allow">Model may override</option></select></label></div>
+                    <div class="image-schema-param"><label for="image_schema_default_model">Model<input id="image_schema_default_model" class="text_pole" type="text"></label><label for="image_schema_policy_model">Model policy<select id="image_schema_policy_model" class="text_pole image-schema-policy"><option value="ignore">Ignore</option><option value="fixed">Fixed</option><option value="allow">Model may override</option></select></label></div>
+                    <div class="image-schema-param"><label for="image_schema_default_seed">Seed<input id="image_schema_default_seed" class="text_pole" type="number" min="0" step="1"></label><label for="image_schema_policy_seed">Seed policy<select id="image_schema_policy_seed" class="text_pole image-schema-policy"><option value="ignore">Ignore</option><option value="fixed">Fixed</option><option value="allow">Model may override</option></select></label></div>
+                    <div class="image-schema-param"><label for="image_schema_default_aspect_ratio">Aspect ratio<input id="image_schema_default_aspect_ratio" class="text_pole" type="text" placeholder="3:4"></label><label for="image_schema_policy_aspect_ratio">Aspect ratio policy<select id="image_schema_policy_aspect_ratio" class="text_pole image-schema-policy"><option value="ignore">Ignore</option><option value="fixed">Fixed</option><option value="allow">Model may override</option></select></label></div>
+                    <div class="image-schema-param"><label for="image_schema_default_image_size">Image size<input id="image_schema_default_image_size" class="text_pole" type="text" placeholder="1K"></label><label for="image_schema_policy_image_size">Image size policy<select id="image_schema_policy_image_size" class="text_pole image-schema-policy"><option value="ignore">Ignore</option><option value="fixed">Fixed</option><option value="allow">Model may override</option></select></label></div>
+                    <div class="image-schema-param"><label for="image_schema_default_output_format">Output format<input id="image_schema_default_output_format" class="text_pole" type="text" placeholder="image/png"></label><label for="image_schema_policy_output_format">Output format policy<select id="image_schema_policy_output_format" class="text_pole image-schema-policy"><option value="ignore">Ignore</option><option value="fixed">Fixed</option><option value="allow">Model may override</option></select></label></div>
+                    <div class="image-schema-param"><label for="image_schema_default_temperature">Temperature<input id="image_schema_default_temperature" class="text_pole" type="number" min="0" max="2" step="0.1"></label><label for="image_schema_policy_temperature">Temperature policy<select id="image_schema_policy_temperature" class="text_pole image-schema-policy"><option value="ignore">Ignore</option><option value="fixed">Fixed</option><option value="allow">Model may override</option></select></label></div>
+                    <div class="image-schema-param"><label for="image_schema_default_person_generation">Person generation<input id="image_schema_default_person_generation" class="text_pole" type="text"></label><label for="image_schema_policy_person_generation">Person generation policy<select id="image_schema_policy_person_generation" class="text_pole image-schema-policy"><option value="ignore">Ignore</option><option value="fixed">Fixed</option><option value="allow">Model may override</option></select></label></div>
+                    <div class="image-schema-param"><label for="image_schema_default_width">Width<input id="image_schema_default_width" class="text_pole" type="number" min="1" step="1"></label><label for="image_schema_policy_width">Width policy<select id="image_schema_policy_width" class="text_pole image-schema-policy"><option value="ignore">Ignore</option><option value="fixed">Fixed</option><option value="allow">Model may override</option></select></label></div>
+                    <div class="image-schema-param"><label for="image_schema_default_height">Height<input id="image_schema_default_height" class="text_pole" type="number" min="1" step="1"></label><label for="image_schema_policy_height">Height policy<select id="image_schema_policy_height" class="text_pole image-schema-policy"><option value="ignore">Ignore</option><option value="fixed">Fixed</option><option value="allow">Model may override</option></select></label></div>
+                    <div class="image-schema-param wide"><label for="image_schema_default_negative">Negative prompt<input id="image_schema_default_negative" class="text_pole" type="text"></label><label for="image_schema_policy_negative">Negative prompt policy<select id="image_schema_policy_negative" class="text_pole image-schema-policy"><option value="ignore">Ignore</option><option value="fixed">Fixed</option><option value="allow">Model may override</option></select></label></div>
+                </div>
+            </section>
+
+            <section class="image-schema-area" aria-labelledby="image_schema_storage_title">
+                <div class="image-schema-area-heading"><div><h3 id="image_schema_storage_title">Storage</h3><p>Inspect or clear regenerable cache and durable generated outputs.</p></div></div>
+                <div class="image-schema-storage-grid">
+                    <section class="image-schema-storage-card" aria-labelledby="image_schema_cache_title"><h4 id="image_schema_cache_title">Regenerable cache</h4><small>Temporary provider response cache for your current user.</small><div class="image-schema-button-row"><button id="image_schema_refresh_cache" type="button" class="menu_button"><i class="fa-solid fa-rotate"></i> Refresh cache</button><button id="image_schema_clear_cache" type="button" class="menu_button redWarningBG"><i class="fa-solid fa-trash"></i> Clear cache</button></div><pre id="image_schema_cache_stats" class="image-schema-output">Not loaded.</pre></section>
+                    <section class="image-schema-storage-card image-schema-storage-card-danger" aria-labelledby="image_schema_outputs_title"><h4 id="image_schema_outputs_title">Durable outputs</h4><small>Authoritative generated image files. Deleting these can permanently remove images from existing chats.</small><div class="image-schema-button-row"><button id="image_schema_refresh_outputs" type="button" class="menu_button"><i class="fa-solid fa-rotate"></i> Refresh outputs</button><button id="image_schema_clear_outputs" type="button" class="menu_button redWarningBG"><i class="fa-solid fa-triangle-exclamation"></i> Delete outputs</button></div><pre id="image_schema_output_stats" class="image-schema-output">Not loaded.</pre></section>
+                </div>
+            </section>
+
+            <details id="image_schema_advanced_diagnostics" class="image-schema-disclosure image-schema-diagnostics-disclosure">
+                <summary>Advanced &amp; diagnostics</summary>
+                <div class="image-schema-disclosure-body">
+                    <div class="image-schema-advanced-grid">
+                        <section class="image-schema-tool-block" aria-labelledby="image_schema_preview_title"><h4 id="image_schema_preview_title">Effective instruction preview</h4><div class="image-schema-preview-meta"><strong id="image_schema_instruction_preview_profile">Instruction shown for: loading…</strong><span id="image_schema_instruction_preview_placement"></span><span id="image_schema_instruction_preview_size"></span></div><pre id="image_schema_instruction_preview" class="image-schema-output"></pre><button id="image_schema_copy_instruction" type="button" class="menu_button"><i class="fa-solid fa-copy"></i> Copy instruction</button></section>
+                        <section class="image-schema-tool-block" aria-labelledby="image_schema_parser_title"><h4 id="image_schema_parser_title">Parser test</h4><label for="image_schema_test_input">Complete model response<textarea id="image_schema_test_input" class="text_pole image-schema-textarea" rows="4" placeholder="Paste a complete model response"></textarea></label><button id="image_schema_test_parser" type="button" class="menu_button">Parse sample</button><pre id="image_schema_test_output" class="image-schema-output"></pre></section>
+                        <section class="image-schema-tool-block" aria-labelledby="image_schema_generation_title"><h4 id="image_schema_generation_title">Generation test</h4><label for="image_schema_test_prompt">Test image prompt<input id="image_schema_test_prompt" class="text_pole" type="text" placeholder="Enter a test image prompt"></label><button id="image_schema_test_generation" type="button" class="menu_button">Run generation test</button><pre id="image_schema_generation_result" class="image-schema-output"></pre></section>
                     </div>
-                    <div id="image_schema_comfy_workflow_status" class="image-schema-comfy-status" data-state="empty">No workflow loaded.</div>
-                    <small>Export ComfyUI in API format. The file is parsed locally, then included only in Analyze and Save requests.</small>
-                    <button id="image_schema_comfy_analyze" type="button" class="menu_button image-schema-comfy-analyze"><i class="fa-solid fa-magnifying-glass"></i> Analyze workflow</button>
-                    <div class="image-schema-grid two image-schema-comfy-bindings">
-                        <div class="image-schema-comfy-binding"><label for="image_schema_comfy_binding_positive">Positive prompt <span class="image-schema-required">required</span></label><div class="image-schema-comfy-binding-control"><select id="image_schema_comfy_binding_positive" class="text_pole"></select><button id="image_schema_comfy_binding_positive_browse" type="button" class="menu_button">Browse</button></div><small id="image_schema_comfy_binding_positive_help" class="image-schema-comfy-binding-help"></small></div>
-                        <div class="image-schema-comfy-binding"><label for="image_schema_comfy_binding_negative">Negative prompt</label><div class="image-schema-comfy-binding-control"><select id="image_schema_comfy_binding_negative" class="text_pole"></select><button id="image_schema_comfy_binding_negative_browse" type="button" class="menu_button">Browse</button></div><small id="image_schema_comfy_binding_negative_help" class="image-schema-comfy-binding-help"></small></div>
-                        <div class="image-schema-comfy-binding"><label for="image_schema_comfy_binding_seed">Seed</label><div class="image-schema-comfy-binding-control"><select id="image_schema_comfy_binding_seed" class="text_pole"></select><button id="image_schema_comfy_binding_seed_browse" type="button" class="menu_button">Browse</button></div><small id="image_schema_comfy_binding_seed_help" class="image-schema-comfy-binding-help"></small></div>
-                        <div class="image-schema-comfy-binding"><label for="image_schema_comfy_binding_width">Width</label><div class="image-schema-comfy-binding-control"><select id="image_schema_comfy_binding_width" class="text_pole"></select><button id="image_schema_comfy_binding_width_browse" type="button" class="menu_button">Browse</button></div><small id="image_schema_comfy_binding_width_help" class="image-schema-comfy-binding-help"></small></div>
-                        <div class="image-schema-comfy-binding"><label for="image_schema_comfy_binding_height">Height</label><div class="image-schema-comfy-binding-control"><select id="image_schema_comfy_binding_height" class="text_pole"></select><button id="image_schema_comfy_binding_height_browse" type="button" class="menu_button">Browse</button></div><small id="image_schema_comfy_binding_height_help" class="image-schema-comfy-binding-help"></small></div>
-                        <div class="image-schema-comfy-binding"><label for="image_schema_comfy_binding_output">Output node</label><div class="image-schema-comfy-binding-control"><select id="image_schema_comfy_binding_output" class="text_pole"></select><button id="image_schema_comfy_binding_output_browse" type="button" class="menu_button">Browse</button></div><small id="image_schema_comfy_binding_output_help" class="image-schema-comfy-binding-help"></small></div>
-                    </div>
-                    <div id="image_schema_comfy_validation" class="image-schema-operation-result" aria-live="polite">Load and analyze an API workflow to configure bindings.</div>
-                </div>
-            </details>
-
-            <details class="image-schema-section">
-                <summary>Cache &amp; Outputs</summary>
-                <div class="image-schema-section-body image-schema-storage-grid">
-                    <section class="image-schema-storage-card" aria-labelledby="image_schema_cache_title">
-                        <h4 id="image_schema_cache_title">Regenerable cache</h4>
-                        <small>Temporary provider response cache for your current user.</small>
-                        <div class="image-schema-button-row"><button id="image_schema_refresh_cache" type="button" class="menu_button"><i class="fa-solid fa-rotate"></i> Refresh cache</button><button id="image_schema_clear_cache" type="button" class="menu_button redWarningBG"><i class="fa-solid fa-trash"></i> Clear cache</button></div>
-                        <pre id="image_schema_cache_stats" class="image-schema-output">Not loaded.</pre>
-                    </section>
-                    <section class="image-schema-storage-card image-schema-storage-card-danger" aria-labelledby="image_schema_outputs_title">
-                        <h4 id="image_schema_outputs_title">Durable outputs</h4>
-                        <small>Authoritative generated image files. Clearing these can permanently remove images from existing chats.</small>
-                        <div class="image-schema-button-row"><button id="image_schema_refresh_outputs" type="button" class="menu_button"><i class="fa-solid fa-rotate"></i> Refresh outputs</button><button id="image_schema_clear_outputs" type="button" class="menu_button redWarningBG"><i class="fa-solid fa-triangle-exclamation"></i> Delete outputs</button></div>
-                        <pre id="image_schema_output_stats" class="image-schema-output">Not loaded.</pre>
-                    </section>
-                </div>
-            </details>
-
-            <details class="image-schema-section">
-                <summary>Developer Diagnostics</summary>
-                <div class="image-schema-section-body">
-                    <label class="checkbox_label" for="image_schema_show_inline_controls"><input id="image_schema_show_inline_controls" type="checkbox"><span>Show inline image controls</span></label>
-                    <label class="checkbox_label" for="image_schema_ignore_code"><input id="image_schema_ignore_code" type="checkbox"><span>Ignore schemas inside Markdown code spans/fences</span></label>
-                    <label for="image_schema_unknown_policy">Unknown model parameter policy<select id="image_schema_unknown_policy" class="text_pole"><option value="reject">Reject with visible parse error</option><option value="ignore">Ignore unknown parameters</option></select></label>
-                    <details class="image-schema-subsection"><summary>Parser test</summary><div class="image-schema-subsection-body"><textarea id="image_schema_test_input" class="text_pole image-schema-textarea" rows="4" placeholder="Paste a complete model response"></textarea><button id="image_schema_test_parser" type="button" class="menu_button">Parse sample</button><pre id="image_schema_test_output" class="image-schema-output"></pre></div></details>
-                    <details class="image-schema-subsection"><summary>Generation test</summary><div class="image-schema-subsection-body"><input id="image_schema_test_prompt" class="text_pole" type="text" placeholder="Test image prompt"><button id="image_schema_test_generation" type="button" class="menu_button">Run test</button><pre id="image_schema_generation_result" class="image-schema-output"></pre></div></details>
-                    <details class="image-schema-subsection"><summary>Full plugin activity</summary><div class="image-schema-subsection-body"><small>Sanitized recent activity: no prompts, URLs, headers, request bodies, or credentials.</small><div class="image-schema-button-row"><button id="image_schema_diagnostics_refresh" type="button" class="menu_button"><i class="fa-solid fa-rotate"></i> Refresh activity</button><button id="image_schema_diagnostics_clear" type="button" class="menu_button redWarningBG">Clear activity</button></div><pre id="image_schema_diagnostics_output" class="image-schema-output">Not loaded.</pre></div></details>
+                    <div class="image-schema-diagnostic-settings"><label class="checkbox_label" for="image_schema_show_inline_controls"><input id="image_schema_show_inline_controls" type="checkbox"><span>Show inline image controls</span></label><label class="checkbox_label" for="image_schema_ignore_code"><input id="image_schema_ignore_code" type="checkbox"><span>Ignore schemas inside Markdown code spans and fences</span></label><label for="image_schema_unknown_policy">Unknown model parameter policy<select id="image_schema_unknown_policy" class="text_pole"><option value="reject">Reject with visible parse error</option><option value="ignore">Ignore unknown parameters</option></select></label></div>
+                    <section class="image-schema-tool-block" aria-labelledby="image_schema_activity_title"><h4 id="image_schema_activity_title">Plugin activity and recent errors</h4><small>Sanitized activity never includes prompts, URLs, headers, request bodies, or credentials.</small><div id="image_schema_error_summary" class="image-schema-error-summary" data-state="empty" aria-live="polite"><div><strong id="image_schema_error_count">0 errors</strong><span id="image_schema_error_latest">No recent sanitized errors.</span></div></div><div class="image-schema-button-row image-schema-status-actions"><button id="image_schema_copy_error" type="button" class="menu_button" disabled><i class="fa-solid fa-copy"></i> Copy latest error</button><button id="image_schema_clear_errors" type="button" class="menu_button redWarningBG" disabled>Clear errors</button><button id="image_schema_diagnostics_refresh" type="button" class="menu_button"><i class="fa-solid fa-rotate"></i> Refresh activity</button><button id="image_schema_diagnostics_clear" type="button" class="menu_button redWarningBG">Clear activity</button></div><pre id="image_schema_diagnostics_output" class="image-schema-output">Not loaded.</pre></section>
                 </div>
             </details>
         </div>
     </div>
 </div>
-
