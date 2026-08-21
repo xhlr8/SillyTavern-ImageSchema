@@ -378,8 +378,10 @@ function escapeAttribute(value) {
 
 export function composeInstruction(schemaPromptInput, instructionPrompt = '') {
     const schemaPrompt = String(schemaPromptInput ?? '').trim();
-    const profileInstruction = String(instructionPrompt ?? '').trim();
-    if (!profileInstruction) return { text: schemaPrompt, placement: 'global-only', token: null };
+    const originalProfileInstruction = String(instructionPrompt ?? '').trim();
+    if (!originalProfileInstruction) return { text: schemaPrompt, placement: 'global-only', token: null };
+    const profileInstruction = migrateDuplicateProfileInstruction(originalProfileInstruction, schemaPrompt);
+    if (profileInstruction === '{{global_schema}}') return { text: schemaPrompt, placement: 'deduplicated', token: '{{global_schema}}' };
     const token = profileInstruction.includes('{{global_schema}}')
         ? '{{global_schema}}'
         : profileInstruction.includes('{{schemaprompt}}') ? '{{schemaprompt}}' : null;

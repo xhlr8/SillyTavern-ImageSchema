@@ -1454,7 +1454,8 @@ function refreshInstructionPreview() {
     setText('image_schema_instruction_preview_profile', `Instruction shown for: ${preview.profileName}`);
     setText('image_schema_instruction_preview_placement', preview.placement === 'inserted'
         ? `Global schema inserted at ${preview.token}`
-        : preview.placement === 'appended' ? 'Global schema automatically appended' : 'Global schema only');
+        : preview.placement === 'appended' ? 'Global schema automatically appended'
+            : preview.placement === 'deduplicated' ? 'Duplicate profile copy collapsed to the global schema' : 'Global schema only');
     setText('image_schema_instruction_preview_size', `${preview.text.length.toLocaleString()} characters`);
     document.querySelectorAll('[data-image-schema-panel]').forEach(panel => {
         panel.classList.toggle('displayNone', panel.getAttribute('data-image-schema-panel') !== settings.schema);
