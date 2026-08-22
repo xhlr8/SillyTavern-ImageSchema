@@ -12,6 +12,8 @@ import {
     withFreshSeed,
     withRefreshToken,
 } from './image-ui.js';
+import { DEFAULT_SETTINGS, normalizeSettings } from './parser.js';
+import { clearImagePin, countImagePins } from './image-pins.js';
 
 test('withFreshSeed copies the request and preserves its other parameters', () => {
     const request = { text: 'portrait', params: { width: 512, seed: 9 } };
@@ -55,6 +57,21 @@ test('image pins are isolated by active swipe and mirrored into swipe metadata',
     assert.equal(getImagePin(message, 0).outputId, 'abc');
 });
 
+test('pin lifecycle counts unique outputs and unpins without deleting storage', () => {
+    const message = { extra: {} };
+    setImagePin(message, 0, { outputId: 'a', request: { text: 'cat', params: {} } });
+    setImagePin(message, 1, { outputId: 'a', request: { text: 'cat again', params: {} } });
+    assert.deepEqual(countImagePins([message]), { total: 2, uniqueOutputs: 1 });
+    assert.equal(clearImagePin(message, 0).outputId, 'a');
+    assert.equal(getImagePin(message, 0), null);
+    assert.deepEqual(countImagePins([message]), { total: 1, uniqueOutputs: 1 });
+});
+
+test('auto pin defaults on and normalizes explicit opt-out', () => {
+    assert.equal(DEFAULT_SETTINGS.autoPinOutputs, true);
+    assert.equal(normalizeSettings({ autoPinOutputs: false }).autoPinOutputs, false);
+});
+
 test('withRefreshToken preserves query delimiters and encodes tokens', () => {
     assert.equal(withRefreshToken('/image/a', 'x y'), '/image/a?_refresh=x%20y');
     assert.equal(withRefreshToken('/image/a?seed=1', 2), '/image/a?seed=1&_refresh=2');
@@ -70,6 +87,10 @@ test('settings use five flat areas and exactly two internal disclosures', () => 
     assert.match(html, /id="image_schema_custom_instruction_field"/);
     assert.doesNotMatch(html, /image_schema_provider_make_default/);
     assert.equal((html.match(/id="image_schema_provider_set_default"/g) || []).length, 1);
+    assert.equal((html.match(/id="image_schema_provider_save"/g) || []).length, 1);
+    assert.match(html, /id="image_schema_auto_pin"/);
+    const advanced = html.slice(html.indexOf('id="image_schema_advanced_diagnostics"'));
+    assert.match(advanced, /id="image_schema_cache_stats"/);
 });
 
 test('formatEffectiveRequest produces readable JSON', () => {

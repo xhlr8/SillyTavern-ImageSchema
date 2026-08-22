@@ -12,12 +12,11 @@ import {
 } from './parser.js';
 import {
     formatEffectiveRequest,
-    getImagePin,
     parseStoredImageRequest,
-    setImagePin,
     withFreshSeed,
     withRefreshToken,
 } from './image-ui.js';
+import { clearImagePin, countImagePins, getImagePin, setImagePin } from './image-pins.js';
 import {
     COMFY_BINDING_KEYS,
     PROVIDER_ROUTE_PATHS,
@@ -333,7 +332,9 @@ async function persistImagePin(image, request, resolution) {
     };
     setImagePin(message, occurrence, pin);
     await context.saveChat();
+    refreshPinStats();
     image.dataset.imageSchemaOutputId = resolution.outputId;
+    image.dataset.imageSchemaResolvedOutputId = resolution.outputId;
     return pin;
 }
 
@@ -451,12 +452,14 @@ function openImageLightbox(reference) {
     controls.dataset.swipeIgnore = 'true';
     const copyButton = makeImageButton('image-schema-lightbox-copy', 'Copy Prompt', 'fa-copy');
     const inspectButton = makeImageButton('image-schema-lightbox-inspect', 'Inspect', 'fa-circle-info');
+    const pinButton = makeImageButton('image-schema-lightbox-pin', 'Pin exact output', 'fa-thumbtack');
     const retryButton = makeImageButton('image-schema-lightbox-retry', 'Regen with Same Seed', 'fa-rotate');
     const regenerateButton = makeImageButton('image-schema-lightbox-regenerate', 'New Seed', 'fa-dice');
     const closeButton = makeImageButton('image-schema-lightbox-close', 'Close', 'fa-xmark');
     for (const [button, label] of [
         [copyButton, 'Copy Prompt'],
         [inspectButton, 'Inspect'],
+        [pinButton, image.dataset.imageSchemaOutputId ? 'Pinned ✓' : 'Pin'],
         [retryButton, 'Regen'],
         [regenerateButton, 'New Seed'],
         [closeButton, 'Close'],
@@ -498,6 +501,36 @@ function openImageLightbox(reference) {
         event.preventDefault();
         const currentRequest = getImageRequest(reference);
         if (currentRequest) showRequestInspector(currentRequest);
+    });
+    const updatePinButton = () => {
+        const text = pinButton.querySelector('span');
+        const pinned = Boolean(image.dataset.imageSchemaOutputId);
+        if (text) text.textContent = pinned ? 'Pinned ✓' : 'Pin';
+        pinButton.title = pinned ? 'Unpin exact output' : 'Pin exact output';
+        pinButton.setAttribute('aria-label', pinButton.title);
+    };
+    pinButton.addEventListener('click', event => {
+        event.preventDefault();
+        void (async () => {
+            const message = context.chat?.[Number(image.dataset.imageSchemaMessage)];
+            const occurrence = Number(image.dataset.imageSchemaOccurrence);
+            if (!message || !Number.isInteger(occurrence)) return notify('error', 'The source message is unavailable.');
+            if (getImagePin(message, occurrence)) {
+                if (!window.confirm('Unpin this exact output? The durable image will remain stored.')) return;
+                clearImagePin(message, occurrence);
+                delete image.dataset.imageSchemaOutputId;
+                await context.saveChat();
+                refreshPinStats();
+                updatePinButton();
+                statusOutput.textContent = settledImageStatus(image) || 'Unpinned';
+                return;
+            }
+            const outputId = image.dataset.imageSchemaResolvedOutputId || image.dataset.imageSchemaOutputId;
+            if (!outputId) return notify('error', 'The current durable output is unavailable.');
+            await persistImagePin(image, getImageRequest(image), { outputId, metadata: {} });
+            updatePinButton();
+            statusOutput.textContent = settledImageStatus(image);
+        })().catch(error => notify('error', error.message));
     });
     const updateLightbox = ({ request: next, source }) => {
         largeImage.src = source;
@@ -728,7 +761,10 @@ function rewriteImages(root, occurrences, messageId) {
         const source = pin ? outputUrl(pin.outputId) : pluginImageUrl(effectiveRequest);
         if (!sameRenderedOccurrence) image.removeAttribute('src');
         addImageControls(image, effectiveRequest, messageId, occurrenceNumber);
-        if (pin) image.dataset.imageSchemaOutputId = pin.outputId;
+        if (pin) {
+            image.dataset.imageSchemaOutputId = pin.outputId;
+            image.dataset.imageSchemaResolvedOutputId = pin.outputId;
+        }
         if (!sameRenderedOccurrence) {
             const state = image.closest('.image-schema-frame')?.querySelector('.image-schema-state');
             if (pin) {
@@ -737,7 +773,8 @@ function rewriteImages(root, occurrences, messageId) {
                 // First view resolves/generates once, persists the immutable ID,
                 // then loads exact bytes. Reloads never re-resolve a pinned image.
                 void resolveOutput(effectiveRequest).then(async resolution => {
-                    await persistImagePin(image, effectiveRequest, resolution);
+                    image.dataset.imageSchemaResolvedOutputId = resolution.outputId;
+                    if (settings.autoPinOutputs) await persistImagePin(image, effectiveRequest, resolution);
                     return loadImageResource(image, outputUrl(resolution.outputId), state);
                 }).catch(error => {
                     image.dataset.imageError = error.message.includes('output_not_found') ? 'output_not_found' : 'request_failed';
@@ -1463,8 +1500,16 @@ function refreshInstructionPreview() {
     });
 }
 
+function refreshPinStats() {
+    const stats = countImagePins(context?.chat);
+    setText('image_schema_pin_stats', stats.total
+        ? `${stats.total} pinned image${stats.total === 1 ? '' : 's'} · ${stats.uniqueOutputs} unique output${stats.uniqueOutputs === 1 ? '' : 's'}`
+        : 'No pinned images in the loaded chat.');
+}
+
 function readSettingsForm() {
     settings.enabled = checked('image_schema_enabled');
+    settings.autoPinOutputs = checked('image_schema_auto_pin');
     settings.showInlineControls = checked('image_schema_show_inline_controls');
     settings.schema = value('image_schema_mode');
     settings.virtualPath = value('image_schema_virtual_path');
@@ -1496,6 +1541,7 @@ function readSettingsForm() {
 
 function populateSettingsForm() {
     setChecked('image_schema_enabled', settings.enabled);
+    setChecked('image_schema_auto_pin', settings.autoPinOutputs);
     setChecked('image_schema_show_inline_controls', settings.showInlineControls);
     setValue('image_schema_mode', settings.schema);
     setValue('image_schema_virtual_path', settings.virtualPath);
@@ -1518,6 +1564,7 @@ function populateSettingsForm() {
     }
     updateConditionalSettings();
     refreshInstructionPreview();
+    refreshPinStats();
 }
 
 async function copyInstruction() {
