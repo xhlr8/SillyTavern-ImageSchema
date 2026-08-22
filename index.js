@@ -45,7 +45,8 @@ import {
 
 const MODULE_NAME = 'imageSchema';
 const PROMPT_KEY = 'image-schema-instruction';
-const GLOBAL_SCHEMA_MACRO = 'globalschemaprompt';
+const GLOBAL_SCHEMA_MACRO = 'schemaprompt';
+const GLOBAL_SCHEMA_ALIASES = Object.freeze(['global_schema', 'globalschemaprompt']);
 const PLUGIN_BASE = '/api/plugins/image-schema';
 const PROJECTED_IMAGE_PLACEHOLDER = 'data:image/gif;base64,R0lGODlhAQABAAAAACw=';
 const EXPECTED_SERVER_VERSION = '1.3.0';
@@ -895,12 +896,16 @@ function previewInstruction() {
 }
 
 function registerGlobalSchemaMacro() {
-    const macroApi = context?.macros;
-    if (!macroApi?.register) return;
-    macroApi.registry?.unregisterMacro?.(GLOBAL_SCHEMA_MACRO);
-    macroApi.register(GLOBAL_SCHEMA_MACRO, {
-        description: 'Expands to the current Image Schema Global Schema & Prompt instruction.',
-        returns: 'The global Image Schema instruction without per-profile wrapping.',
+    const registry = context?.macros?.registry;
+    const register = context?.macros?.register;
+    if (!registry?.registerMacro || typeof register !== 'function') return;
+    registry.unregisterMacro(GLOBAL_SCHEMA_MACRO);
+    for (const alias of GLOBAL_SCHEMA_ALIASES) registry.unregisterMacro(alias);
+    register(GLOBAL_SCHEMA_MACRO, {
+        category: 'Image Schema',
+        description: 'Current global Image Schema prompt. Works in Prompt Manager prompts, chat, and every SillyTavern macro-enabled field.',
+        returns: 'The exact current contents of the global schema prompt field.',
+        aliases: GLOBAL_SCHEMA_ALIASES.map(alias => ({ alias, visible: true })),
         handler: () => globalInstruction(),
     });
 }
@@ -1800,6 +1805,7 @@ export async function clean() {
         context?.eventSource?.removeListener?.(event, handler);
     }
     context?.macros?.registry?.unregisterMacro?.(GLOBAL_SCHEMA_MACRO);
+    for (const alias of GLOBAL_SCHEMA_ALIASES) context?.macros?.registry?.unregisterMacro?.(alias);
     document.getElementById('image_schema_settings')?.remove();
     if (context?.chat) {
         for (const message of context.chat) clearLegacyProjectionMetadata(message);

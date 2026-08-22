@@ -16,7 +16,6 @@
                     <label class="checkbox_label image-schema-enabled-control" for="image_schema_enabled"><input id="image_schema_enabled" type="checkbox"><span>Render model image schemas</span></label>
                     <span><span class="image-schema-status-label">Extension</span> <strong id="image_schema_extension_status">Enabled</strong></span>
                     <span><span class="image-schema-status-label">Plugin</span> <span id="image_schema_plugin_status" class="image-schema-status" data-state="checking">Not checked</span></span>
-                    <span><span class="image-schema-status-label">Active profile</span> <strong id="image_schema_active_profile">Not loaded</strong></span>
                     <button id="image_schema_check_plugin" type="button" class="menu_button image-schema-compact-button"><i class="fa-solid fa-plug-circle-check"></i> Check plugin</button>
                 </div>
             </section>
@@ -114,8 +113,8 @@
                 <div class="image-schema-toggle-stack">
                     <label class="checkbox_label" for="image_schema_inject"><input id="image_schema_inject" type="checkbox"><span>Inject schema instruction into normal generations</span></label>
                     <div id="image_schema_inject_options" class="image-schema-conditional displayNone"><label class="checkbox_label" for="image_schema_inject_quiet"><input id="image_schema_inject_quiet" type="checkbox"><span>Also inject into quiet and automatic generations</span></label></div>
-                    <label class="checkbox_label" for="image_schema_custom_enabled"><input id="image_schema_custom_enabled" type="checkbox"><span>Use a custom instruction</span></label>
-                    <div id="image_schema_custom_instruction_field" class="image-schema-conditional displayNone"><label for="image_schema_custom_instruction">Custom schema instruction<textarea id="image_schema_custom_instruction" class="text_pole image-schema-textarea" rows="4" placeholder="Write the model-facing image instruction"></textarea></label></div>
+                    <label class="checkbox_label" for="image_schema_custom_enabled"><input id="image_schema_custom_enabled" type="checkbox"><span>Use a custom global schema prompt</span></label>
+                    <div id="image_schema_custom_instruction_field" class="image-schema-conditional displayNone"><label for="image_schema_custom_instruction">Global schema prompt<textarea id="image_schema_custom_instruction" class="text_pole image-schema-textarea" rows="8" placeholder="Write the model-facing image schema prompt"></textarea></label><small>Use <code>{{schemaprompt}}</code> or <code>{{global_schema}}</code> anywhere SillyTavern expands macros—including Prompt Manager prompts and chat text—to insert this field's current contents.</small></div>
                 </div>
             </section>
 

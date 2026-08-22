@@ -89,6 +89,9 @@ test('settings use five flat areas and exactly two internal disclosures', () => 
     assert.equal((html.match(/id="image_schema_provider_set_default"/g) || []).length, 1);
     assert.equal((html.match(/id="image_schema_provider_save"/g) || []).length, 1);
     assert.match(html, /id="image_schema_auto_pin"/);
+    assert.doesNotMatch(html, /image_schema_active_profile/);
+    assert.match(html, /\{\{schemaprompt\}\}/);
+    assert.match(html, /Prompt Manager prompts and chat text/);
     const advanced = html.slice(html.indexOf('id="image_schema_advanced_diagnostics"'));
     assert.match(advanced, /id="image_schema_cache_stats"/);
 });
